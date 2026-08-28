@@ -1,0 +1,14 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Chat interno</h1><span class="muted">Histórico de conversaciones entre usuarios del inventario.</span></div></div>
+<div class="chat-layout">
+ <section class="card chat-users"><h2>Usuarios</h2>{% for account in chat_users %}<a href="{% url 'chat_conversation' account.pk %}" class="chat-user {% if selected_user.pk == account.pk %}active{% endif %}"><span>{{account.username}}</span>{% if account.unread_count %}<b>{{account.unread_count}}</b>{% endif %}</a>{% empty %}<p class="muted">No hay otros usuarios activos.</p>{% endfor %}</section>
+ <section class="card chat-conversation">{% if selected_user %}<h2>Conversación con {{selected_user.username}}</h2><div class="chat-history" id="chat-history">{% for message in conversation %}<article class="chat-message {% if message.sender_id == user.id %}mine{% endif %}"><strong>{{message.sender.username}}</strong><p>{{message.body|linebreaksbr}}</p><small>{{message.created_at|date:"d/m/Y H:i"}}{% if message.sender_id == user.id and message.read_at %} · leído{% endif %}</small></article>{% empty %}<p class="muted">Todavía no hay mensajes. Inicie la conversación.</p>{% endfor %}</div><form method="post" class="chat-compose">{% csrf_token %}<textarea name="body" maxlength="4000" required placeholder="Escriba un mensaje…"></textarea><button class="btn" type="submit">Enviar</button></form>{% else %}<h2>Seleccione un usuario</h2><p class="muted">El histórico completo aparecerá aquí.</p>{% endif %}</section>
+</div>
+<script>
+const history=document.getElementById('chat-history');if(history)history.scrollTop=history.scrollHeight;
+const chatForm=document.querySelector('.chat-compose');
+const chatBox=chatForm?.querySelector('textarea[name="body"]');
+if(chatForm&&chatBox){chatBox.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();if(chatBox.value.trim()){chatForm.requestSubmit();}}});}
+</script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "inventory/base.html" %}{% load inventory_extras %}{% block content %}
+<style>
+.batch-toolbar{display:flex;gap:14px;align-items:end;justify-content:space-between;flex-wrap:wrap;margin:0 0 16px}.batch-selector{min-width:min(440px,100%)}.batch-selector label{margin-top:0}.batch-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 18px}.batch-tab{display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border-radius:9px 9px 0 0;text-decoration:none;color:var(--muted);font-weight:800;border:1px solid transparent;border-bottom:0}.batch-tab:hover{background:#f4f7fb;color:var(--navy)}.batch-tab.active{background:#fff;color:var(--navy);border-color:var(--line);box-shadow:0 -2px 8px #0b1f3310}.batch-pane>.card:first-child{margin-top:0}.sheet-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}.sheet-chip{display:block;border:1px solid var(--line);border-radius:10px;padding:12px;text-decoration:none;color:var(--ink);background:#fff}.sheet-chip.active{border-color:var(--navy);box-shadow:0 0 0 2px #16324f18}.sheet-chip strong,.sheet-chip span{display:block}.form-actions{display:flex;gap:8px;align-items:center;margin-top:14px}.batch-note{background:#f7f9fc;border:1px solid var(--line);padding:11px 13px;border-radius:9px;margin-bottom:14px}.batch-empty{padding:35px;text-align:center}.batch-history code{white-space:pre-wrap;word-break:break-word;font-size:11px}.sheet-table input{min-width:95px;padding:7px 8px}.sheet-table td,.sheet-table th{white-space:nowrap}.sheet-table td:first-child input{min-width:110px}
+@media(max-width:700px){.batch-tab{padding:9px 10px;font-size:13px}.batch-selector{min-width:100%}}
+</style>
+<div class="top"><div><h1>Lotes de clientes</h1><span class="muted">Tablas internas para lotes y componentes de clientes. No forman parte del Excel general del inventario.</span></div></div>
+
+<div class="card" style="padding-bottom:10px">
+ <div class="batch-toolbar">
+  <div class="batch-selector">
+   <label>Pedido de trabajo</label>
+   <select id="batch-sheet-selector" onchange="if(this.value) location.href=this.value;">
+    {% if not sheets %}<option value="">No hay tablas creadas</option>{% endif %}
+    {% for s in sheets %}<option value="{% url 'client_batches_sheet' s.pk %}?tab={{active_tab}}" {% if sheet and s.pk == sheet.pk %}selected{% endif %}>{{s.client|default:"Sin proveedor"}} · {% if s.concept %}{{s.concept}} · {% endif %}{{s.name}}</option>{% endfor %}
+   </select>
+  </div>
+  {% if sheet %}<div><strong>{{sheet.name}}</strong><br><span class="muted">{{sheet.client|default:"Sin proveedor"}}{% if sheet.concept %} · {{sheet.concept}}{% endif %}</span></div>{% endif %}
+ </div>
+ <div class="batch-tabs" role="tablist">
+  {% if sheet %}<a class="batch-tab {% if active_tab == 'records' %}active{% endif %}" href="{% url 'client_batches_sheet' sheet.pk %}?tab=records">▦ Registros</a>
+  <a class="batch-tab {% if active_tab == 'add' %}active{% endif %}" href="{% url 'client_batches_sheet' sheet.pk %}?tab=add">＋ Añadir objeto</a>{% endif %}
+  <a class="batch-tab {% if active_tab == 'sheets' %}active{% endif %}" href="{% if sheet %}{% url 'client_batches_sheet' sheet.pk %}{% else %}{% url 'client_batches' %}{% endif %}?tab=sheets">▤ Crear / gestionar tablas</a>
+  {% if sheet %}<a class="batch-tab {% if active_tab == 'fields' %}active{% endif %}" href="{% url 'client_batches_sheet' sheet.pk %}?tab=fields">⚙ Configurar campos</a>
+  <a class="batch-tab {% if active_tab == 'history' %}active{% endif %}" href="{% url 'client_batches_sheet' sheet.pk %}?tab=history">◷ Histórico</a>{% endif %}
+ </div>
+</div>
+
+{% if active_tab == 'sheets' %}
+<div class="batch-pane">
+ <div class="grid2">
+  <div class="card">
+   <h2>Crear nueva tabla</h2>
+   <p class="muted">Crea un pedido interno independiente y después añade sus campos personalizados desde la pestaña «Configurar campos».</p>
+   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="create_sheet">{{sheet_form.as_div}}<div class="form-actions"><button class="btn">Crear tabla</button></div></form>
+  </div>
+  <div class="card">
+   <h2>Tablas existentes</h2>
+   <div class="sheet-list">{% for s in sheets %}<a class="sheet-chip {% if sheet and s.pk == sheet.pk %}active{% endif %}" href="{% url 'client_batches_sheet' s.pk %}?tab=sheets"><strong>{{s.name}}</strong><span class="muted">{{s.client|default:"Sin proveedor"}}{% if s.concept %} · {{s.concept}}{% endif %}</span></a>{% empty %}<p class="muted">No hay tablas internas todavía.</p>{% endfor %}</div>
+  </div>
+ </div>
+ {% if sheet %}<div class="card"><h2>Datos del pedido seleccionado</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_sheet">{{current_sheet_form.as_div}}<div class="form-actions"><button class="btn secondary">Guardar cambios de la tabla</button></div></form></div>{% endif %}
+</div>
+{% elif not sheet %}
+<div class="card batch-empty"><h2>Aún no hay tablas internas</h2><p class="muted">Crea la primera tabla para empezar a registrar lotes de clientes.</p><a class="btn" href="{% url 'client_batches' %}?tab=sheets">Crear primera tabla</a></div>
+{% elif active_tab == 'add' %}
+<div class="batch-pane">
+ <div class="card" style="max-width:850px"><h2>Añadir objeto a «{{sheet.name}}»</h2><p class="muted">Los campos de esta pantalla pertenecen únicamente a esta tabla interna.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="create_row">{{row_form.as_div}}<div class="form-actions"><button class="btn">Añadir objeto</button><a class="btn secondary" href="{% url 'client_batches_sheet' sheet.pk %}?tab=records">Volver a registros</a></div></form></div>
+</div>
+{% elif active_tab == 'fields' %}
+<div class="batch-pane">
+ <div class="grid2">
+  <div class="card"><h2>Añadir campo personalizado</h2><p class="muted">Los campos base de identificación, cantidades, precio, cliente y observaciones se mantienen protegidos.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="create_field">{{field_form.as_div}}<div class="form-actions"><button class="btn">Añadir campo</button></div></form></div>
+  <div class="card"><h2>Campos base protegidos</h2><div class="batch-note"><strong>ID · Marca · Modelo · Componente · Referencia · UD pendientes · Stock · UD enviadas · Precio unitario · Precio total · Cliente · Observaciones</strong></div><p class="muted">Estos campos sostienen la lógica de movimientos y cálculo del lote y no pueden eliminarse desde esta pantalla.</p></div>
+ </div>
+ <div class="card"><h2>Campos personalizados</h2>{% for f in fields %}<form method="post" style="display:grid;grid-template-columns:minmax(180px,1fr) 160px auto auto;gap:8px;align-items:end;margin-bottom:10px">{% csrf_token %}<input type="hidden" name="field_id" value="{{f.pk}}"><div><label>Nombre</label><input name="field_edit-name" value="{{f.name}}"></div><div><label>Tipo</label><select name="field_edit-field_type"><option value="text" {% if f.field_type == 'text' %}selected{% endif %}>Texto</option><option value="number" {% if f.field_type == 'number' %}selected{% endif %}>Número</option><option value="date" {% if f.field_type == 'date' %}selected{% endif %}>Fecha</option><option value="bool" {% if f.field_type == 'bool' %}selected{% endif %}>Sí/No</option></select></div><button class="btn small secondary" name="action" value="update_field">Guardar</button><button class="btn small danger" name="action" value="disable_field">Quitar</button></form>{% empty %}<p class="muted">Esta tabla todavía no tiene campos adicionales.</p>{% endfor %}</div>
+</div>
+{% elif active_tab == 'history' %}
+<div class="batch-pane"><div class="card batch-history"><h2>Histórico de cambios · {{sheet.name}}</h2><p class="muted">Se conservan cambios de estructura, campos y registros, con usuario y fecha/hora.</p><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Acción</th><th>Registro/campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>{% for c in changes %}<tr><td>{{c.changed_at|date:"d/m/Y H:i:s"}}</td><td>{{c.changed_by.username}}</td><td>{{c.get_action_display}}</td><td>{% if c.row %}{{c.row.internal_id}}{% elif c.field %}{{c.field.name}}{% else %}{{c.sheet.name}}{% endif %}</td><td><code>{{c.before}}</code></td><td><code>{{c.after}}</code></td></tr>{% empty %}<tr><td colspan="6">Sin cambios registrados.</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}
+<div class="batch-pane">
+ <div class="card"><div class="top"><div><h2>Registros · {{sheet.name}}</h2><span class="muted">Edición directa tipo hoja de cálculo</span></div><a class="btn" href="{% url 'client_batches_sheet' sheet.pk %}?tab=add">＋ Añadir objeto</a></div>
+ <div class="batch-note">Al aumentar <strong>Stock</strong>, se descuentan automáticamente esas unidades de <strong>UD pendientes</strong>. Al aumentar <strong>UD enviadas</strong>, se descuentan de <strong>Stock</strong>. El precio total es (pendientes + stock + enviadas) × precio unitario.</div>
+ <div class="table-wrap"><table class="sheet-table"><thead><tr><th>ID</th><th>Marca</th><th>Modelo</th><th>Componente</th><th>Referencia</th><th>UD pendientes</th><th>Stock</th><th>UD enviadas</th><th>Precio unitario</th><th>Precio total</th><th>Cliente</th><th>Observaciones</th>{% for f in fields %}<th>{{f.name}}</th>{% endfor %}</tr></thead><tbody>{% for r in rows %}<tr>
+<td><strong>{{r.internal_id}}</strong></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="brand"><input name="value" value="{{r.brand}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="model_reference"><input name="value" value="{{r.model_reference}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="component"><input name="value" value="{{r.component}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="reference"><input name="value" value="{{r.reference}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="units_pending"><input type="number" min="0" name="value" value="{{r.units_pending}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="units_stock"><input type="number" min="0" name="value" value="{{r.units_stock}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="units_sent"><input type="number" min="0" name="value" value="{{r.units_sent}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="unit_price"><input type="number" min="0" step="0.0001" name="value" value="{{r.unit_price}}" onchange="this.form.submit()"></form></td><td><strong>{{r.total_price}}</strong></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="client"><input name="value" value="{{r.client}}" onchange="this.form.submit()"></form></td>
+<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="observations"><input name="value" value="{{r.observations}}" onchange="this.form.submit()"></form></td>
+{% for f in fields %}<td><form method="post">{% csrf_token %}<input type="hidden" name="action" value="update_cell"><input type="hidden" name="row_id" value="{{r.pk}}"><input type="hidden" name="field" value="extra:{{f.key}}"><input name="value" value="{{r.extra_data|get_item:f.key}}" onchange="this.form.submit()"></form></td>{% endfor %}</tr>{% empty %}<tr><td colspan="20">No hay registros todavía. Utiliza «Añadir objeto» para crear el primero.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endif %}
+{% endblock %}

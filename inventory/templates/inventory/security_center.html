@@ -1,0 +1,48 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Centro de Seguridad</h1><span class="muted">Detección de cambios de huella, accesos simultáneos y violaciones de horario.</span></div><a class="btn secondary" href="{% url 'security_policy' %}">Configurar política horaria</a></div>
+
+<div class="stats">
+  <div class="stat"><b style="color:#d71920">{{red_count}}</b><span>Alertas rojas pendientes</span></div>
+  <div class="stat"><b style="color:#9a7200">{{yellow_count}}</b><span>Alertas amarillas pendientes</span></div>
+  <div class="stat"><b>{{active_sessions|length}}</b><span>Sesiones activas recientes</span></div>
+  <div class="stat"><b>{% if policy.enabled %}ACTIVA{% else %}OFF{% endif %}</b><span>Política horaria</span></div>
+</div>
+
+<div class="card">
+<h2>Alertas de seguridad</h2>
+<div class="table-wrap"><table>
+<tr><th>NIVEL</th><th>USUARIO</th><th>TIPO</th><th>DETALLE</th><th>IP</th><th>FECHA</th><th>ESTADO / ACCIÓN</th></tr>
+{% for event in alerts %}
+<tr style="{% if not event.reviewed and event.level == 'RED' %}background:#fff0f0{% elif not event.reviewed and event.level == 'YELLOW' %}background:#fff9e8{% endif %}">
+<td>{% if event.level == "RED" %}<b style="color:#d71920">🔴 ROJA</b>{% else %}<b style="color:#9a7200">🟡 AMARILLA</b>{% endif %}</td>
+<td><b>{{event.user.username}}</b>{% if not event.user.is_active %}<br><span class="badge alert">BLOQUEADO</span>{% endif %}</td>
+<td>{{event.get_event_type_display}}</td>
+<td>{{event.description}}{% if event.previous_ip %}<br><span class="muted">IP anterior: {{event.previous_ip}}</span>{% endif %}</td>
+<td>{{event.ip|default:"—"}}</td>
+<td>{{event.created_at|date:"d/m/Y H:i:s"}}</td>
+<td>
+{% if event.reviewed %}
+  Revisada{% if event.reviewed_by %} por {{event.reviewed_by.username}}{% endif %}{% if event.resolution %}<br><span class="muted">{{event.resolution}}</span>{% endif %}
+{% else %}
+  <form method="post" class="actions">{% csrf_token %}<input type="hidden" name="event_id" value="{{event.pk}}">
+    {% if user.is_superuser and not event.user.is_active %}<button class="btn small" name="action" value="unblock_user">Desbloquear usuario</button><button class="btn small danger" name="action" value="keep_blocked">Mantener bloqueo</button>{% else %}<button class="btn small secondary" name="action" value="review_event">Marcar revisada</button>{% endif %}
+  </form>
+{% endif %}
+</td>
+</tr>
+{% empty %}<tr><td colspan="7">No hay eventos de seguridad.</td></tr>{% endfor %}
+</table></div></div>
+
+<div class="card">
+<h2>Sesiones activas recientes</h2>
+<p class="muted">Se consideran activas las sesiones con actividad durante los últimos 10 minutos.</p>
+<div class="table-wrap"><table>
+<tr><th>USUARIO</th><th>IP</th><th>NAVEGADOR</th><th>SISTEMA</th><th>INICIO</th><th>ÚLTIMA ACTIVIDAD</th><th>CLIENTE</th>{% if user.is_superuser %}<th>ACCIÓN</th>{% endif %}</tr>
+{% for s in active_sessions %}
+<tr><td><b>{{s.user.username}}</b></td><td>{{s.ip|default:"—"}}</td><td>{{s.browser|default:"—"}}</td><td>{{s.operating_system|default:"—"}}</td><td>{{s.started_at|date:"d/m/Y H:i:s"}}</td><td>{{s.last_activity|date:"d/m/Y H:i:s"}}</td><td>{{s.language|default:"—"}} · {{s.timezone_name|default:"—"}} · {{s.screen_resolution|default:"—"}}</td>
+{% if user.is_superuser %}<td>{% if not s.user.is_superuser %}<form method="post">{% csrf_token %}<input type="hidden" name="session_id" value="{{s.pk}}"><button class="btn small danger" name="action" value="close_session">Cerrar sesión</button></form>{% else %}<span class="muted">Gestor protegido</span>{% endif %}</td>{% endif %}
+</tr>
+{% empty %}<tr><td colspan="8">No hay sesiones activas recientes.</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

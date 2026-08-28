@@ -1,0 +1,6 @@
+{% extends "inventory/base.html" %}{% block content %}
+<div class="top"><div><h1>{{ title }}</h1><span class="muted">Vista de datos de solo lectura, similar a una hoja de cálculo.</span></div></div>
+<div class="actions" style="margin-bottom:14px">{% for name in allowed_tables %}<a class="btn small secondary" href="{% url 'raw_table_named' name %}">{{ name }}</a>{% endfor %}</div>
+<form class="search"><input name="q" value="{{ query }}" placeholder="Filtrar cualquier columna…"><button class="btn">Filtrar</button></form>
+<div class="card"><div class="table-wrap"><table><thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value|default_if_none:"" }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="{{ columns|length }}">No hay registros.</td></tr>{% endfor %}</tbody></table></div>{% if page.has_other_pages %}<div class="pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}">Anterior</a>{% endif %}<span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}">Siguiente</a>{% endif %}</div>{% endif %}</div>
+{% endblock %}

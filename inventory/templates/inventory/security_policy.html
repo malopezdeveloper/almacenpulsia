@@ -1,0 +1,49 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Política horaria de acceso</h1><span class="muted">Define cuándo pueden acceder Usuarios y Administradores. El Gestor queda siempre exento.</span></div><a class="btn secondary" href="{% url 'security_center' %}">Centro de Seguridad</a></div>
+
+<div class="card form">
+  <h2>Horario de uso del servicio</h2>
+  <form method="post">{% csrf_token %}
+    <label style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" name="enabled" style="width:auto" {% if policy.enabled %}checked{% endif %}>
+      Activar restricción horaria
+    </label>
+
+    <h3>Días permitidos</h3>
+    <div class="actions" style="gap:16px;margin-bottom:16px">
+      {% for value,label in day_choices %}
+      <label style="display:flex;align-items:center;gap:6px;margin:0">
+        <input type="checkbox" name="days" value="{{value}}" style="width:auto" {% if value in allowed_days %}checked{% endif %}> {{label}}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="grid2">
+      <div><label>Hora de inicio</label><input type="time" name="start_time" value="{{policy.start_time|time:'H:i'}}" required></div>
+      <div><label>Hora máxima</label><input type="time" name="end_time" value="{{policy.end_time|time:'H:i'}}" required></div>
+    </div>
+
+    <div class="card" style="background:#fff8e8;margin-top:16px">
+      <b>Regla fija de cierre</b>
+      <p style="margin-bottom:0">Todos los Usuarios y Administradores terminan su sesión automáticamente <b>60 segundos antes</b> de la hora máxima. El Gestor no está sujeto a esta regla.</p>
+    </div>
+
+    <div class="card" style="background:#fff1f1">
+      <b>Acceso fuera de horario</b>
+      <p style="margin-bottom:0">Si un Usuario o Administrador intenta iniciar sesión fuera de los días u horas permitidos, la cuenta queda <b>bloqueada indefinidamente</b> y se genera una <b>alerta roja</b>. Solo el Gestor decide si la desbloquea.</p>
+    </div>
+
+    <div class="actions"><button class="btn" type="submit">Guardar política horaria</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Estado actual</h2>
+  <p><b>Política:</b> {% if policy.enabled %}<span class="badge">ACTIVA</span>{% else %}Desactivada{% endif %}</p>
+  <p><b>Horario:</b> {{policy.start_time|time:"H:i"}} - {{policy.end_time|time:"H:i"}}</p>
+  <p><b>Cierre automático:</b> 60 segundos antes.</p>
+  <p><b>Gestor:</b> siempre autorizado.</p>
+  {% if policy.updated_by %}<p class="muted">Última modificación: {{policy.updated_at|date:"d/m/Y H:i"}} por {{policy.updated_by.username}}</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Reservas</h1><span class="muted">Solicitud, aprobación y confirmación de entrega física.</span></div></div>
+<div class="actions" style="margin-bottom:16px">
+  <a class="btn {% if tab != 'search' %}secondary{% endif %}" href="{% url 'reservations_center' %}?tab=search">Histórico / buscar</a>
+  <a class="btn {% if tab != 'pending' %}secondary{% endif %}" href="{% url 'reservations_center' %}?tab=pending">{% if can_manage %}Solicitudes y entregas{% else %}Mis solicitudes{% endif %} {% if pending_count %}<span class="badge alert">{{pending_count}}</span>{% endif %}</a>
+</div>
+
+{% if tab == 'pending' %}
+{% if can_manage %}
+<div class="card"><h2>Pendientes de aprobación</h2><p class="muted">Aprobar no modifica el estado del objeto. “Aprobar y entregar” realiza ambos pasos de una vez.</p>
+<div class="table-wrap"><table><tr><th>OBJETO</th><th>USUARIO</th><th>DESTINO</th><th>SN DESTINO</th><th>FECHA</th><th>ACCIONES</th></tr>
+{% for r in reservations %}{% if r.status == 'pending' %}
+<tr><td><b>{{r.record.internal_id}}</b><br><span class="muted">{{r.record.table.name}}</span></td><td>{{r.requested_by.username}}</td><td>{{r.get_destination_display}}</td><td>{{r.destination_sn}}</td><td>{{r.requested_at|date:"d/m/Y H:i"}}</td><td>
+<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="reservation_id" value="{{r.pk}}">
+<button class="btn small" name="action" value="accept">Aprobar</button>
+<button class="btn small secondary" name="action" value="approve_deliver">Aprobar y entregar</button>
+<button class="btn small danger" name="action" value="reject">Rechazar</button>
+</form></td></tr>
+{% endif %}{% empty %}<tr><td colspan="6">No hay solicitudes pendientes.</td></tr>{% endfor %}
+</table></div></div>
+
+<div class="card"><h2>Aprobadas pendientes de entrega</h2><div class="table-wrap"><table><tr><th>OBJETO</th><th>USUARIO</th><th>APROBACIÓN</th><th>DESTINO / SN</th><th>ACCIONES</th></tr>
+{% for r in reservations %}{% if r.status == 'accepted' %}
+<tr><td><b>{{r.record.internal_id}}</b><br>{{r.record.table.name}}</td><td>{{r.requested_by.username}}</td><td>{{r.accepted_at|date:"d/m/Y H:i"}}<br><span class="muted">{{r.accepted_by.username}}</span></td><td>{{r.get_destination_display}} · {{r.destination_sn}}</td><td>
+<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="reservation_id" value="{{r.pk}}">
+<button class="btn small" name="action" value="deliver">Marcar como entregado</button>
+<button class="btn small secondary" name="action" value="cancel">Cancelar</button>
+<button class="btn small danger" name="action" value="scrap">Merma</button>
+</form></td></tr>
+{% endif %}{% empty %}<tr><td colspan="5">No hay objetos aprobados pendientes de entrega.</td></tr>{% endfor %}
+</table></div></div>
+{% else %}
+<details class="card" open><summary><b>Solicitudes pendientes de aprobación ({{pending_requests|length}})</b></summary><div style="margin-top:14px">
+{% for r in pending_requests %}<div style="padding:10px 0;border-bottom:1px solid var(--line)"><b>{{r.record.internal_id}} · {{r.record.table.name}}</b><br><span class="muted">Solicitado {{r.requested_at|date:"d/m/Y H:i"}} · {{r.get_destination_display}} · {{r.destination_sn}}</span></div>{% empty %}<p class="muted">No tienes solicitudes pendientes de aprobación.</p>{% endfor %}
+</div></details>
+<details class="card" open><summary><b>Aprobados pendientes de recibir ({{approved_requests|length}})</b></summary><div style="margin-top:14px">
+{% for r in approved_requests %}<div style="padding:12px 0;border-bottom:1px solid var(--line)"><b>{{r.record.internal_id}} · {{r.record.table.name}}</b><br><span class="muted">Aprobado {{r.accepted_at|date:"d/m/Y H:i"}} por {{r.accepted_by.username}}</span><form method="post" style="margin-top:8px">{% csrf_token %}<input type="hidden" name="reservation_id" value="{{r.pk}}"><button class="btn small" name="action" value="deliver">Confirmar que lo he recibido</button></form></div>{% empty %}<p class="muted">No tienes objetos aprobados pendientes de entrega.</p>{% endfor %}
+</div></details>
+{% endif %}
+
+{% else %}
+<div class="card form"><h2>Buscar reservas</h2><form method="get"><input type="hidden" name="tab" value="search">
+<div class="grid2">
+<div><label>Texto</label><input name="q" value="{{filters.q|default:''}}" placeholder="ID, tabla, usuario, destino…"></div>
+<div><label>Usuario / técnico</label><input name="technician" value="{{filters.technician|default:''}}"></div>
+<div><label>SN destino</label><input name="sn" value="{{filters.sn|default:''}}"></div>
+<div><label>Estado</label><select name="status"><option value="">Todos</option>{% for value,label in status_choices %}<option value="{{value}}" {% if filters.status == value %}selected{% endif %}>{{label}}</option>{% endfor %}</select></div>
+<div><label>Tabla / categoría</label><select name="table"><option value="">Todas</option>{% for table in tables %}<option value="{{table.pk}}" {% if filters.table == table.pk|stringformat:'s' %}selected{% endif %}>{{table.name}}</option>{% endfor %}</select></div>
+<div><label>Solo entregadas</label><select name="delivered_only"><option value="0">No</option><option value="1" {% if filters.delivered_only == '1' %}selected{% endif %}>Sí</option></select></div>
+<div><label>Desde</label><input type="date" name="date_from" value="{{filters.date_from|default:''}}"></div><div><label>Hasta</label><input type="date" name="date_to" value="{{filters.date_to|default:''}}"></div>
+</div>
+<h3>Campos del objeto</h3>{% for n in "123" %}<div class="grid2"><div><label>Criterio {{n}}</label><select name="field_{{n}}"><option value="">—</option>{% for field in search_fields %}<option value="{{field.pk}}" {% if n == '1' and filters.field_1 == field.pk|stringformat:'s' %}selected{% elif n == '2' and filters.field_2 == field.pk|stringformat:'s' %}selected{% elif n == '3' and filters.field_3 == field.pk|stringformat:'s' %}selected{% endif %}>{{field.table.name}} · {{field.name}}</option>{% endfor %}</select></div><div><label>Valor</label><input name="value_{{n}}" value="{% if n == '1' %}{{filters.value_1|default:''}}{% elif n == '2' %}{{filters.value_2|default:''}}{% else %}{{filters.value_3|default:''}}{% endif %}"></div></div>{% endfor %}
+<div class="actions"><button class="btn">Buscar</button><a class="btn secondary" href="{% url 'reservations_center' %}?tab=search">Limpiar</a></div></form></div>
+<div class="card"><h2>Resultados</h2><div class="table-wrap"><table><tr><th>OBJETO</th><th>SOLICITANTE</th><th>DESTINO</th><th>SN</th><th>SOLICITUD</th><th>APROBACIÓN</th><th>ESTADO</th><th>RESOLUCIÓN</th>{% if can_manage %}<th>ACCIÓN</th>{% endif %}</tr>
+{% for r in reservations %}<tr><td><b>{{r.record.internal_id}}</b><br><span class="muted">{{r.record.table.name}}</span></td><td>{{r.requested_by.username}}</td><td>{{r.get_destination_display}}</td><td>{{r.destination_sn}}</td><td>{{r.requested_at|date:"d/m/Y H:i"}}</td><td>{% if r.accepted_at %}{{r.accepted_at|date:"d/m/Y H:i"}}<br>{{r.accepted_by.username}}{% else %}—{% endif %}</td><td><span class="badge">{{r.get_status_display}}</span></td><td>{% if r.resolved_at %}{{r.resolved_at|date:"d/m/Y H:i"}}<br>{{r.resolved_by.username}}{% else %}—{% endif %}</td>{% if can_manage %}<td>{% if r.status == 'accepted' %}<form method="post">{% csrf_token %}<input type="hidden" name="reservation_id" value="{{r.pk}}"><button class="btn small" name="action" value="deliver">Marcar entregado</button></form>{% else %}Histórico{% endif %}</td>{% endif %}</tr>{% empty %}<tr><td colspan="9">No hay reservas que coincidan con los criterios.</td></tr>{% endfor %}
+</table></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+<div class="production-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px 0">
+  <a class="btn {% if request.resolver_match.url_name != 'production_board' %}secondary{% endif %}" href="{% url 'production_board' %}">Mi Pizarra</a>
+  {% if user.is_staff or user.is_superuser %}
+  <a class="btn {% if request.resolver_match.url_name != 'production_current' %}secondary{% endif %}" href="{% url 'production_current' %}">Producción Actual</a>
+  <a class="btn {% if request.resolver_match.url_name != 'production_reports' %}secondary{% endif %}" href="{% url 'production_reports' %}">Pizarra General e informes</a>
+  {% endif %}
+</div>

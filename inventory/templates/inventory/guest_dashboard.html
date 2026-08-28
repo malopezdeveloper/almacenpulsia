@@ -1,0 +1,32 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Acceso de invitado</h1><span class="muted">Su cuenta todavía no dispone de permisos sobre el inventario.</span></div></div>
+<div class="card form">
+  {% if access_request %}
+    {% if access_request.status == "pending" %}
+      <h2>Solicitud pendiente</h2>
+      <p>Su solicitud para convertirse en Usuario está pendiente de revisión por el Gestor.</p>
+      <p class="muted">Enviada el {{access_request.requested_at|date:"d/m/Y H:i"}}.</p>
+      <button class="btn secondary" type="button" disabled>Solicitud enviada</button>
+    {% elif access_request.status == "approved" %}
+      <h2>Solicitud aprobada</h2>
+      <p>El Gestor ha autorizado su acceso. Recargue la sesión para acceder como Usuario.</p>
+    {% else %}
+      <h2>Solicitud denegada</h2>
+      <p>La solicitud ha sido denegada por el Gestor.</p>
+    {% endif %}
+  {% else %}
+    <h2>Solicitar acceso como Usuario</h2>
+    <p>Como Invitado únicamente puede utilizar el chat interno y solicitar al Gestor el ascenso a Usuario.</p>
+    <form method="post" action="{% url 'request_access_upgrade' %}">
+      {% csrf_token %}
+      <button class="btn" type="submit">Solicitar acceso como Usuario</button>
+    </form>
+  {% endif %}
+</div>
+<div class="card form">
+  <h2>Chat interno</h2>
+  <p>Puede utilizar el chat mientras espera la decisión del Gestor.</p>
+  <a class="btn secondary" href="{% url 'chat_center' %}">Abrir chat</a>
+</div>
+{% endblock %}

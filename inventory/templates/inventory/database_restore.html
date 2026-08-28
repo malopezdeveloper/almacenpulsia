@@ -1,0 +1,10 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Restaurar copia de la base de datos</h1><span class="muted">Disponible exclusivamente para el usuario gestor.</span></div></div>
+<div class="card form"><p>La copia sustituirá todos los datos, usuarios y estructura actuales. Antes de restaurarla se creará automáticamente una copia de seguridad del estado actual.</p>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+ <label for="file">Copia SQLite</label><input id="file" type="file" name="file" accept=".sqlite3,.sqlite,.db" required>
+ <label for="password">Contraseña actual del gestor</label><input id="password" type="password" name="password" autocomplete="current-password" required>
+ <div class="actions" style="margin-top:18px"><a class="btn secondary" href="{% url 'dashboard' %}">Cancelar</a><button class="btn danger" type="submit">Validar y restaurar copia</button></div>
+</form></div>
+{% endblock %}

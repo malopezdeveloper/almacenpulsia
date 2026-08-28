@@ -1,0 +1,24 @@
+{% extends "inventory/base.html" %}
+{% block title %}Producción Actual · PULSIA Inventario{% endblock %}
+{% block content %}
+{% include "inventory/production_tabs.html" %}
+<style>
+.live-grid{display:grid;grid-template-columns:repeat(3,minmax(170px,1fr));gap:14px;margin-bottom:18px}
+.live-kpi{padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.live-kpi small{display:block;color:var(--muted);margin-bottom:8px}.live-kpi strong{font-size:2rem}
+.live-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}.live-table{width:100%;border-collapse:collapse}.live-table th,.live-table td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left}.live-table th:nth-last-child(-n+2),.live-table td:nth-last-child(-n+2){text-align:right}.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2fbf71;margin-right:6px;vertical-align:middle}
+@media(max-width:900px){.live-grid,.live-columns{grid-template-columns:1fr}}
+</style>
+<div class="top"><div><h1><span class="live-dot"></span>Producción Actual</h1><span class="muted">Jornada {{ today|date:"d/m/Y" }} · actualización automática cada 10 segundos · solo Administrador/Gestor</span></div><div class="pill">Actualizado: <b>{{ now|date:"H:i:s" }}</b></div></div>
+<div class="live-grid">
+  <div class="live-kpi"><small>Producción acumulada hoy</small><strong>{{ total_day }}</strong> <span class="muted">uds</span></div>
+  <div class="live-kpi"><small>Hora actual · {{ current_hour|stringformat:"02d" }}:00–{{ current_hour|add:1|stringformat:"02d" }}:00</small><strong>{{ total_current_hour }}</strong> <span class="muted">uds</span></div>
+  <div class="live-kpi"><small>Técnicos con producción hoy</small><strong>{{ active_users }}</strong></div>
+</div>
+<div class="live-columns">
+  <div class="card"><h2>Por zona de destino</h2><table class="live-table"><thead><tr><th>Zona</th><th>Hora actual</th><th>Total día</th></tr></thead><tbody>{% for row in zone_rows %}<tr><td>{{ row.label }}</td><td>{{ row.current_total }}</td><td><b>{{ row.total }}</b></td></tr>{% empty %}<tr><td colspan="3" class="muted">Todavía no hay producción registrada hoy.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="card"><h2>Por técnico</h2><table class="live-table"><thead><tr><th>Técnico</th><th>Hora actual</th><th>Total día</th></tr></thead><tbody>{% for row in user_rows %}<tr><td>{{ row.display_name }}</td><td>{{ row.current_total }}</td><td><b>{{ row.total }}</b></td></tr>{% empty %}<tr><td colspan="3" class="muted">Todavía no hay producción registrada hoy.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="card" style="margin-top:18px"><div class="top"><div><h2>Últimas anotaciones</h2><span class="muted">Hasta 100 registros de la jornada actual.</span></div></div><div style="overflow:auto"><table class="live-table"><thead><tr><th>Hora</th><th>Técnico</th><th>Origen</th><th>Destino</th><th>Modelo</th><th>RAM</th><th>Disco</th><th>Procesador</th><th>Cantidad</th></tr></thead><tbody>{% for e in recent_entries %}<tr><td>{{ e.created_at|date:"H:i:s" }}</td><td>{{ e.user.get_full_name|default:e.user.username }}</td><td>{{ e.get_origin_zone_display|default:"—" }}</td><td>{{ e.get_zone_display }}</td><td>{{ e.model_name }}</td><td>{% if e.ram_gb %}{{ e.ram_gb }} GB{% else %}—{% endif %}</td><td>{% if e.disk_gb %}{{ e.disk_gb }} GB{% else %}—{% endif %}</td><td>{{ e.processor_name|default:"—" }}</td><td><b>{{ e.quantity }}</b></td></tr>{% empty %}<tr><td colspan="9" class="muted">Todavía no hay anotaciones hoy.</td></tr>{% endfor %}</tbody></table></div></div>
+<script>setInterval(()=>{if(!document.hidden)location.reload()},10000);</script>
+{% endblock %}

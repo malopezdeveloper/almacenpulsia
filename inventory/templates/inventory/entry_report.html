@@ -1,0 +1,11 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Informe de altas por fecha</h1><span class="muted">Consulta cuántos objetos se registraron y qué usuario realizó cada alta.</span></div></div>
+<form class="search" method="get"><input type="date" name="date" value="{{selected_text}}" required><button class="btn" type="submit">Consultar fecha</button></form>
+{% if error %}<div class="card"><p>{{error}}</p></div>{% endif %}
+{% if selected_date %}
+<section class="stats"><div class="stat"><span>FECHA CONSULTADA</span><strong style="font-size:20px">{{selected_date|date:"d/m/Y"}}</strong></div><div class="stat"><span>TOTAL DE ALTAS</span><strong>{{total}}</strong></div><div class="stat"><span>USUARIOS QUE DIERON ALTAS</span><strong>{{by_user|length}}</strong></div></section>
+<div class="card"><h2>Resumen por usuario</h2><div class="table-wrap"><table><thead><tr><th>USUARIO</th><th>OBJETOS DADOS DE ALTA</th></tr></thead><tbody>{% for username,count in by_user %}<tr><td><b>{{username}}</b></td><td>{{count}}</td></tr>{% empty %}<tr><td colspan="2">No se registraron altas en esta fecha.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><h2>Detalle de objetos</h2><div class="table-wrap"><table><thead><tr><th>HORA</th><th>TABLA</th><th>ID DEL OBJETO</th><th>DADO DE ALTA POR</th></tr></thead><tbody>{% for record in records %}<tr><td>{{record.created_at|date:"H:i:s"}}</td><td>{{record.table.name}}</td><td><b>{{record.internal_id}}</b></td><td>{{record.created_by.username}}</td></tr>{% empty %}<tr><td colspan="4">No se registraron altas en esta fecha.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,113 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}PULSIA Inventario{% endblock %}</title><style>
+:root{--navy:#132746;--navy2:#1b355b;--orange:#f47a20;--bg:#f3f6fa;--line:#dfe5ed;--ink:#182237;--muted:#748199;--red:#c83d36}*{box-sizing:border-box}body{margin:0;font:14px "Segoe UI",Arial;background:var(--bg);color:var(--ink)}aside{position:fixed;inset:0 auto 0 0;width:270px;background:var(--navy);padding:24px 17px;color:#c4d0e1;overflow-y:auto}.brand{display:flex;align-items:center;gap:12px;color:#fff;font-weight:800;font-size:17px;border-bottom:1px solid #304766;padding-bottom:20px}.brand b{display:grid;place-items:center;background:var(--orange);width:40px;height:40px;border-radius:10px;font-size:23px}.brand small{font-weight:500;color:#91a4c0}nav{margin-top:18px}nav a{display:flex;align-items:center;gap:9px;color:#c4d0e1;text-decoration:none;padding:9px 12px;border-radius:8px;margin:2px 0}nav a:hover{background:var(--navy2);color:white}.security-link.yellow{background:#8a6700;color:#fff;font-weight:800;box-shadow:0 0 0 1px #ffd84d66 inset}.security-link.red{background:#d71920;color:#fff;font-weight:900;box-shadow:0 0 14px #ff2a35aa;animation:securityPulse 1.2s infinite alternate}@keyframes securityPulse{from{box-shadow:0 0 8px #ff2a3577}to{box-shadow:0 0 22px #ff2a35dd}}nav small{display:block;color:#7086a5;margin:20px 12px 7px;letter-spacing:.11em;font-size:10px}.role{margin:20px 10px 0;padding:12px;border-radius:9px;background:#0e203b}.role strong{display:block;color:#fff}.role span{font-size:11px;color:#8fa3bf}main{margin-left:270px;padding:28px 34px}.top{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:20px}.actions{display:flex;gap:8px;flex-wrap:wrap}h1{font-size:26px;margin:0 0 4px}h2{font-size:16px;margin:0 0 14px}.muted{color:var(--muted)}.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:0;border-radius:7px;padding:10px 14px;background:var(--orange);color:#fff;font-weight:700;cursor:pointer}.btn.secondary{background:#fff;color:#31415b;border:1px solid var(--line)}.btn.danger{background:var(--red)}.btn.small{padding:6px 9px;font-size:12px}.card{background:white;border:1px solid var(--line);border-radius:11px;padding:20px;margin-bottom:16px}.search{display:flex;background:white;border:1px solid var(--line);border-radius:9px;padding:5px;margin-bottom:18px}.search input{flex:1;border:0;outline:0;padding:10px}.search select{width:auto;border:0}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}.stat{background:white;border:1px solid var(--line);border-radius:9px;padding:16px}.stat span{font-size:11px;color:var(--muted)}.stat strong{font-size:25px;display:block;margin-top:5px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:9px}table{width:100%;border-collapse:collapse;background:white;white-space:nowrap}th,td{text-align:left;padding:11px;border-bottom:1px solid #edf0f4;max-width:380px;overflow:hidden;text-overflow:ellipsis}th{font-size:10px;color:#6f7d93;background:#f7f9fb;position:sticky;top:0}tr:hover td{background:#fbfcfe}.record-row{cursor:pointer}label{display:block;font-weight:700;font-size:12px;margin:14px 0 6px}input,select,textarea{width:100%;padding:10px;border:1px solid #d7dee8;border-radius:7px;background:#fff}.form{max-width:850px}.messages{list-style:none;padding:0}.messages li{background:#e5f5ec;color:#246a4b;padding:12px;border-radius:8px;margin-bottom:12px}.grid2,.table-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.table-tile{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:9px;padding:15px;background:#fff}.table-tile strong{display:block}.badge{display:inline-block;border-radius:20px;padding:4px 8px;background:#edf2f7;font-size:11px}.badge.alert{background:#ff0019;color:#fff;margin-left:auto;font-weight:900;box-shadow:0 0 12px #ff001999}@keyframes urgent-alert{0%,100%{background:#d40013;color:#fff;box-shadow:0 0 5px #ff0019}50%{background:#ff0019;color:#fff;box-shadow:0 0 22px #ff0019,0 0 38px #ff001988}}nav a.attention{color:#fff!important;font-weight:900;animation:urgent-alert .7s ease-in-out infinite}.chat-layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px}.chat-user{display:flex;justify-content:space-between;padding:11px 12px;border-radius:8px;color:var(--ink);text-decoration:none}.chat-user:hover,.chat-user.active{background:#edf2f8}.chat-user b{background:var(--red);color:#fff;border-radius:20px;padding:2px 7px}.chat-history{height:52vh;overflow-y:auto;background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:15px}.chat-message{max-width:76%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:9px 0}.chat-message.mine{margin-left:auto;background:#fff4ec;border-color:#ffd8bc}.chat-message p{white-space:normal;margin:5px 0}.chat-message small{color:var(--muted)}.chat-compose{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;margin-top:12px}.chat-compose textarea{min-height:70px}dialog{width:min(680px,calc(100% - 32px));border:0;border-radius:12px;padding:0;box-shadow:0 24px 80px #07162966}dialog::backdrop{background:#07162999}.dialog-body{padding:24px}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.detail-grid div{padding:8px 0;border-bottom:1px solid var(--line)}#infinite-status{text-align:center;padding:18px;color:var(--muted)}.nav-group{margin:6px 0;border-bottom:1px solid #ffffff0d}.nav-group summary{list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;color:#8fa3bf;padding:11px 12px 8px;letter-spacing:.11em;font-size:10px;font-weight:800;border-radius:8px}.nav-group summary::-webkit-details-marker{display:none}.nav-group summary::after{content:"▸";font-size:13px;transition:transform .16s ease;color:#7086a5}.nav-group[open] summary::after{transform:rotate(90deg)}.nav-group summary:hover{background:#ffffff09;color:#c4d0e1}.nav-group[open] summary{color:#c4d0e1}.nav-group.has-attention summary{color:#fff;background:#a51d2a;font-weight:900}.nav-group.has-warning summary{color:#fff;background:#8a6700}.nav-group a.active{background:var(--navy2);color:#fff;font-weight:700}.nav-session{margin-top:12px;border-top:1px solid #304766;padding-top:4px}.nav-session small{margin-top:12px}@media(max-width:900px){aside{position:static;width:auto}main{margin:0;padding:18px}.stats,.grid2,.table-grid{grid-template-columns:1fr 1fr}.chat-layout{grid-template-columns:1fr}}@media(max-width:560px){.stats,.grid2,.table-grid,.detail-grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.chat-compose{grid-template-columns:1fr}}
+</style></head><body data-reservation-alert="{{unseen_reservations_count|default:0}}"><aside><a class="brand" href="{% url 'dashboard' %}" style="text-decoration:none"><b>P</b><span>PULSIA<br><small>Inventario técnico</small></span></a><nav><a href="{% url 'certificate_help' %}">🔒 Obtener certificado</a>{% if is_guest %}
+<details class="nav-group" data-nav-group="guest" open><summary>INVITADO</summary>
+<a id="chat-alert" href="{% url 'chat_center' %}" class="{% if unread_messages_count %}attention{% endif %}">✉ Chat interno <span id="chat-badge" class="badge alert" {% if not unread_messages_count %}hidden{% endif %}>{{unread_messages_count|default:0}}</span></a>
+<a href="{% url 'dashboard' %}">♙ Solicitar acceso como Usuario</a>
+</details>
+<div class="nav-session"><small>SESIÓN</small><div class="role"><strong>Invitado</strong><span>{{user.username}}</span></div><form method="post" action="{% url 'logout' %}" style="padding:10px">{% csrf_token %}<button type="submit" style="border:0;background:transparent;color:#c2cee0;padding:0;cursor:pointer">↪ Cerrar sesión</button></form></div>
+{% else %}
+<details class="nav-group" data-nav-group="production"><summary>PRODUCCIÓN</summary>
+<a href="{% url 'production_board' %}">▤ Mi Pizarra</a>{% if user.is_staff or user.is_superuser %}<a href="{% url 'production_current' %}">● Producción Actual</a><a href="{% url 'production_reports' %}">▥ Pizarra General e informes</a>{% endif %}
+</details>
+<details class="nav-group" data-nav-group="consult"><summary>CONSULTA</summary>
+<a href="{% url 'dashboard' %}{% if not user.is_staff %}?view=inventory{% endif %}">▦ Resumen y búsqueda</a>
+<a id="loan-alert" href="{% url 'loans_center' %}" class="{% if user.is_staff and pending_loan_requests_count %}attention{% endif %}">↔ Préstamos <span class="badge alert" {% if not user.is_staff or not pending_loan_requests_count %}hidden{% endif %}>{{pending_loan_requests_count|default:0}}</span></a>
+<a id="reservation-alert" href="{% url 'reservations_center' %}" class="{% if user.is_staff and pending_reservations_count %}attention{% endif %}">● Reservas <span id="reservation-badge" class="badge alert" {% if not user.is_staff or not pending_reservations_count %}hidden{% endif %}>{{pending_reservations_count|default:0}}</span></a>
+<a id="chat-alert" href="{% url 'chat_center' %}" class="{% if unread_messages_count %}attention{% endif %}">✉ Chat interno <span id="chat-badge" class="badge alert" {% if not unread_messages_count %}hidden{% endif %}>{{unread_messages_count|default:0}}</span></a>
+<a href="{% url 'surplus_component' %}">↩ Entregar componente sobrante</a>
+{% if user.is_staff %}<a href="{% url 'trace' %}">⌁ Informes por SN/técnico</a><a href="{% url 'entry_report' %}">◷ Informe de altas por fecha</a>{% endif %}
+</details>
+{% if inventory_tables %}<details class="nav-group" data-nav-group="inventory"><summary>TABLAS DEL INVENTARIO</summary>{% for nav_table in inventory_tables %}<a href="{% url 'table_view' nav_table.slug %}">▤ {{ nav_table.name }}</a>{% endfor %}</details>{% endif %}
+{% if user.is_staff %}
+<details class="nav-group" data-nav-group="operations"><summary>OPERACIONES</summary>
+<a href="{% url 'add_item' %}">＋ Dar de alta</a><a href="{% url 'productivity_report' %}">▥ Productividad</a><a href="{% url 'assign_item' %}">↗ Entregar a técnico</a><a href="{% url 'scrap_item' %}">⌫ Registrar baja</a><a href="{% url 'printing_center' %}">▣ Impresión de etiquetas</a><a id="incident-alert" href="{% url 'incidents' %}" class="{% if pending_incidents_count %}attention{% endif %}">⚑ Incidencias <span id="incident-badge" class="badge alert" {% if not pending_incidents_count %}hidden{% endif %}>{{pending_incidents_count|default:0}}</span></a>
+</details>
+<details class="nav-group" data-nav-group="security"><summary>SEGURIDAD</summary>
+<a id="security-alert" href="{% url 'security_center' %}" class="security-link {% if security_red_count %}red{% elif security_yellow_count %}yellow{% endif %}">🔐 Seguridad <span id="security-red-badge" class="badge alert" {% if not security_red_count %}hidden{% endif %}>{{security_red_count|default:0}} roja(s)</span><span id="security-yellow-badge" class="badge" {% if security_red_count or not security_yellow_count %}hidden{% endif %}>{{security_yellow_count|default:0}} amarilla(s)</span></a><a href="{% url 'security_policy' %}">◷ Política horaria</a><a href="{% url 'structure' %}">⚙ Tablas y campos</a>
+</details>
+<details class="nav-group" data-nav-group="batches"><summary>LOTES DE CLIENTES</summary><a href="{% url 'client_batches' %}">▦ Tablas internas</a></details>
+{% endif %}
+{% if user.is_superuser %}
+<details class="nav-group" data-nav-group="superuser"><summary>MÁXIMOS PERMISOS</summary>
+<a href="{% url 'import_excel' %}">↥ Importar Excel</a><a href="{% url 'export_excel' %}">↧ Exportar Excel</a><a href="{% url 'database_backup' %}">◫ Exportar copia de la base</a><a id="backup-disk-alert" href="{% url 'backup_settings' %}" class="{% if backup_disk_alert %}attention{% endif %}">◴ Backups automáticos <span id="backup-disk-badge" class="badge alert" {% if not backup_disk_alert %}hidden{% endif %}>BACKUP</span></a><a href="{% url 'database_restore' %}">▣ Restaurar copia de la base</a><a href="{% url 'users_panel' %}" class="{% if password_reset_requests_count or pending_access_upgrade_count %}attention{% endif %}">♙ Usuarios y claves <span class="badge alert" {% if not password_reset_requests_count %}hidden{% endif %}>{{password_reset_requests_count|default:0}}</span><span class="badge alert" {% if not pending_access_upgrade_count %}hidden{% endif %}>{{pending_access_upgrade_count|default:0}} acceso</span></a><a href="{% url 'access_control' %}">◉ Accesos e IPs</a><a href="{% url 'zones_manager' %}">⌖ Zonas</a><a href="{% url 'truncate_inventory' %}">⚠ Vaciar inventario</a><a href="{% url 'stop_service' %}">■ Detener servicio</a>
+</details>
+{% endif %}
+<div class="nav-session"><small>SESIÓN</small><div class="role"><strong>{% if user.is_superuser %}Máximos permisos{% elif user.is_staff %}Administrador{% else %}Usuario{% endif %}</strong><span>{{user.username}}</span></div><form method="post" action="{% url 'logout' %}" style="padding:10px">{% csrf_token %}<button type="submit" style="border:0;background:transparent;color:#c2cee0;padding:0;cursor:pointer">↪ Cerrar sesión</button></form></div>
+{% endif %}</nav></aside><main>{% if messages %}<ul class="messages">{% for message in messages %}<li>{{message}}</li>{% endfor %}</ul>{% endif %}{% block content %}{% endblock %}</main><form id="security-csrf-form" style="display:none">{% csrf_token %}</form>
+<dialog id="record-dialog"><div class="dialog-body"><div class="top"><div><h2 id="detail-title">Objeto</h2><span class="muted" id="detail-subtitle"></span></div><button class="btn secondary" type="button" data-dialog-close>Cerrar</button></div><div class="detail-grid" id="detail-fields"></div><form id="reserve-form" method="post" style="margin-top:18px" {% if not user.is_staff %}hidden{% endif %}>{% csrf_token %}<input type="hidden" name="next" value="{{request.get_full_path}}"><h2>Reservar este objeto</h2><label>Destino</label><select name="destination" required><option value="">Seleccione…</option>{% for zone in global_zones %}<option value="{{ zone.code }}">{{ zone.name }}</option>{% endfor %}</select><label>SN de la máquina de destino</label><input name="destination_sn" maxlength="180" required><button class="btn" type="submit" style="margin-top:14px">Reservar</button></form><p id="not-reservable" class="muted" hidden>Este objeto no está disponible para reservar.</p></div></dialog>
+<script>const dlg=document.getElementById('record-dialog'),reserveForm=document.getElementById('reserve-form');document.addEventListener('click',async e=>{const trigger=e.target.closest('[data-record-url]');if(trigger&&!e.target.closest('a')){e.preventDefault();const res=await fetch(trigger.dataset.recordUrl,{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}});if(!res.ok){location.reload();return}const data=await res.json();document.getElementById('detail-title').textContent=data.id;document.getElementById('detail-subtitle').textContent=data.table+' · '+data.status;document.getElementById('detail-fields').innerHTML=data.fields.map(f=>'<div><small class="muted">'+escapeHtml(f.name)+'</small><br><b>'+escapeHtml(String(f.value??''))+'</b></div>').join('');reserveForm.action=data.reserve_url;reserveForm.hidden=!data.can_reserve;document.getElementById('not-reservable').hidden=data.can_reserve;dlg.showModal()}if(e.target.closest('[data-dialog-close]'))dlg.close()});reserveForm.addEventListener('submit',async e=>{e.preventDefault();const button=reserveForm.querySelector('button[type="submit"]'),token=reserveForm.querySelector('[name="csrfmiddlewaretoken"]').value;button.disabled=true;try{const response=await fetch(reserveForm.action,{method:'POST',body:new FormData(reserveForm),credentials:'same-origin',redirect:'follow',headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'}});if(response.status===403){alert('La sesión de seguridad ha caducado. La página se recargará para renovarla.');location.reload();return}location.assign(response.url||'{% url "dashboard" %}')}catch(error){alert('No se pudo completar la reserva. Compruebe la conexión e inténtelo de nuevo.');button.disabled=false}});function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML}
+let audioReady=false,lastTone=0;document.addEventListener('pointerdown',()=>{audioReady=true},{once:true});function softTone(){if(!audioReady||Date.now()-lastTone<9000)return;lastTone=Date.now();try{const context=new(window.AudioContext||window.webkitAudioContext)(),osc=context.createOscillator(),gain=context.createGain();osc.frequency.value=540;gain.gain.setValueAtTime(.018,context.currentTime);gain.gain.exponentialRampToValueAtTime(.001,context.currentTime+.22);osc.connect(gain);gain.connect(context.destination);osc.start();osc.stop(context.currentTime+.22)}catch(error){}}
+function updateAlert(link,badge,count,attention){if(!link)return;link.classList.toggle('attention',attention>0);badge.hidden=count<1;badge.textContent=count}async function pollNotifications(){try{const response=await fetch('{% url "notification_status" %}',{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}});if(!response.ok)return;const data=await response.json();updateAlert(document.getElementById('chat-alert'),document.getElementById('chat-badge'),data.unread_messages,data.unread_messages);updateAlert(document.getElementById('reservation-alert'),document.getElementById('reservation-badge'),data.pending_reservations,data.pending_reservations);updateAlert(document.getElementById('loan-alert'),document.querySelector('#loan-alert .badge'),data.pending_loan_requests,data.pending_loan_requests);updateAlert(document.getElementById('incident-alert'),document.getElementById('incident-badge'),data.pending_incidents||0,data.pending_incidents||0);const sec=document.getElementById('security-alert'),red=document.getElementById('security-red-badge'),yellow=document.getElementById('security-yellow-badge');if(sec){sec.classList.toggle('red',(data.security_red||0)>0);sec.classList.toggle('yellow',(data.security_red||0)<1&&(data.security_yellow||0)>0);if(red){red.hidden=(data.security_red||0)<1;red.textContent=(data.security_red||0)+' roja(s)'}if(yellow){yellow.hidden=(data.security_red||0)>0||(data.security_yellow||0)<1;yellow.textContent=(data.security_yellow||0)+' amarilla(s)'}}updateAlert(document.getElementById('backup-disk-alert'),document.getElementById('backup-disk-badge'),data.backup_disk_alert||0,data.backup_disk_alert||0);if(data.pending_reservations>0||data.pending_loan_requests>0||(data.pending_incidents||0)>0||(data.security_red||0)>0||(data.backup_disk_alert||0)>0)softTone()}catch(error){}}setInterval(pollNotifications,10000);if(Number(document.body.dataset.reservationAlert)>0)softTone();
+
+const securityCsrf=document.querySelector('#security-csrf-form input[name=csrfmiddlewaretoken]')?.value||'';
+async function sendClientFingerprint(){
+  try{
+    const payload={
+      language:navigator.language||'',
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',
+      screen:`${window.screen?.width||0}x${window.screen?.height||0}`,
+      platform:navigator.userAgentData?.platform||navigator.platform||'',
+      hardware_concurrency:navigator.hardwareConcurrency||null,
+      device_memory:navigator.deviceMemory||null
+    };
+    await fetch('{% url "security_fingerprint" %}',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRFToken':securityCsrf,'X-Requested-With':'XMLHttpRequest'},
+      body:JSON.stringify(payload)
+    });
+  }catch(error){}
+}
+async function pollSecuritySession(){
+  try{
+    const response=await fetch('{% url "security_session_state" %}',{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}});
+    if(response.status===401){
+      window.location.href='{% url "login" %}';
+      return;
+    }
+    if(!response.ok)return;
+    const data=await response.json();
+    if(data.force_logout)window.location.href='{% url "login" %}';
+  }catch(error){}
+}
+sendClientFingerprint();
+setInterval(pollSecuritySession,10000);
+
+// Menú lateral plegable: conserva el estado por usuario/navegador y abre siempre
+// el grupo correspondiente a la pantalla actual para evitar un lateral gigante.
+(function initCollapsibleNavigation(){
+  const groups=[...document.querySelectorAll('nav details.nav-group')];
+  const storageKey='pulsia-nav-groups-v1';
+  let saved={};
+  try{saved=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){saved={}}
+  const currentPath=(location.pathname.replace(/\/$/,'')||'/');
+  let activeGroup=null;
+  groups.forEach(group=>{
+    const key=group.dataset.navGroup;
+    if(Object.prototype.hasOwnProperty.call(saved,key))group.open=Boolean(saved[key]);
+    const links=[...group.querySelectorAll('a[href]')];
+    for(const link of links){
+      const url=new URL(link.href,location.origin);
+      const linkPath=(url.pathname.replace(/\/$/,'')||'/');
+      const exact=currentPath===linkPath;
+      const nested=linkPath!=='/' && currentPath.startsWith(linkPath+'/');
+      if(exact||nested){link.classList.add('active');activeGroup=group;break}
+    }
+    const refreshGroupAlert=()=>{
+      const hasRed=Boolean(group.querySelector('a.attention, a.security-link.red'));
+      const hasWarning=!hasRed && Boolean(group.querySelector('a.security-link.yellow'));
+      group.classList.toggle('has-attention',hasRed);
+      group.classList.toggle('has-warning',hasWarning);
+    };
+    refreshGroupAlert();
+    new MutationObserver(refreshGroupAlert).observe(group,{attributes:true,subtree:true,attributeFilter:['class','hidden']});
+    group.addEventListener('toggle',()=>{
+      let state={};
+      try{state=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){}
+      state[key]=group.open;
+      try{localStorage.setItem(storageKey,JSON.stringify(state))}catch(error){}
+    });
+  });
+  if(activeGroup)activeGroup.open=true;
+})();
+</script></body></html>

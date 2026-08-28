@@ -1,0 +1,17 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+data/*.sqlite3
+data/caddy/
+backups/*
+logs/*
+staticfiles/
+.DS_Store
+Thumbs.db
+*.log
+
+certs/*.crt
+cliente/*.crtcliente/servidor_cliente.ini
+cliente/PULSIA_Cliente_Windows.zip
+cliente/PULSIA_Cliente_Linux.tar.gz

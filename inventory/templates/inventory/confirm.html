@@ -1,0 +1,10 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="card form danger-zone"><h1>{{ title }}</h1><p>{{ warning }}</p>
+<form method="post">{% csrf_token %}
+ <label for="confirm">{{ confirm_label }}</label><input id="confirm" name="confirm" autocomplete="off" required {% if fixed_confirm %}pattern="{{ fixed_confirm }}"{% endif %}>
+ {% if require_password %}<label for="password">Contraseña actual del gestor</label><input id="password" name="password" type="password" autocomplete="current-password" required>{% endif %}
+ <br><br><button id="confirm-button" class="btn danger" type="submit" {% if wait_seconds %}disabled{% endif %}>{% if wait_seconds %}Espere <span id="countdown">{{wait_seconds}}</span> s{% elif stop_action %}Detener servicio{% else %}Confirmar operación{% endif %}</button> <a class="btn secondary" href="{% url 'dashboard' %}">Cancelar</a>
+</form></div>
+{% if wait_seconds %}<script>let n={{wait_seconds}},b=document.getElementById('confirm-button'),c=document.getElementById('countdown');const timer=setInterval(()=>{n-=1;c.textContent=Math.max(0,n);if(n<=0){clearInterval(timer);b.disabled=false;b.textContent='Confirmar borrado total';}},1000);</script>{% endif %}
+{% endblock %}

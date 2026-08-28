@@ -1,0 +1,25 @@
+{% extends "inventory/base.html" %}
+{% block title %}Zonas · PULSIA Inventario{% endblock %}
+{% block content %}
+<div class="top"><div><h1>Zonas</h1><span class="muted">Catálogo único utilizado por producción, reservas y componentes sobrantes. Sólo el Gestor puede modificarlo.</span></div></div>
+<div class="card form" style="margin-bottom:18px">
+ <h2>Añadir zona</h2>
+ <form method="post">{% csrf_token %}<input type="hidden" name="action" value="add"><label>Nombre</label><input name="name" maxlength="100" required placeholder="Ej.: Pintura"><button class="btn" type="submit" style="margin-top:12px">Añadir zona</button></form>
+</div>
+<div class="card">
+ <h2>Catálogo de zonas</h2>
+ <p class="muted">Desactivar conserva los históricos, pero elimina la zona de los desplegables de nuevas operaciones.</p>
+ <div style="overflow:auto"><table><thead><tr><th>Orden</th><th>Zona</th><th>Código interno</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+ {% for zone in zones %}<tr>
+  <td><input form="save-zone-{{zone.id}}" type="number" name="position" min="0" value="{{zone.position}}" style="width:80px"></td>
+  <td><input form="save-zone-{{zone.id}}" name="name" maxlength="100" value="{{zone.name}}" required style="min-width:220px"></td>
+  <td><code>{{zone.code}}</code></td>
+  <td>{% if zone.is_active %}<b>Activa</b>{% else %}<span class="muted">Inactiva</span>{% endif %}</td>
+  <td style="white-space:nowrap">
+   <form id="save-zone-{{zone.id}}" method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="save"><input type="hidden" name="zone_id" value="{{zone.id}}"><button class="btn secondary" type="submit">Guardar</button></form>
+   <form method="post" style="display:inline;margin-left:6px">{% csrf_token %}<input type="hidden" name="action" value="toggle"><input type="hidden" name="zone_id" value="{{zone.id}}"><button class="btn {% if zone.is_active %}danger{% else %}secondary{% endif %}" type="submit">{% if zone.is_active %}Desactivar{% else %}Activar{% endif %}</button></form>
+  </td>
+ </tr>{% empty %}<tr><td colspan="5">No hay zonas configuradas.</td></tr>{% endfor %}
+ </tbody></table></div>
+</div>
+{% endblock %}

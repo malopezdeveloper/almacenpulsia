@@ -1,0 +1,34 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Préstamos</h1><span class="muted">Buscar material prestable, solicitarlo y consultar el histórico desde una única pantalla.</span></div></div>
+<div class="actions" style="margin-bottom:16px">
+  <a class="btn {% if tab != 'search' %}secondary{% endif %}" href="{% url 'loans_center' %}?tab=search">Buscar y solicitar</a>
+  {% if can_manage %}<a class="btn {% if tab != 'pending' %}secondary{% endif %}" href="{% url 'loans_center' %}?tab=pending">Solicitudes pendientes {% if pending_loan_requests_count %}<span class="badge alert">{{pending_loan_requests_count}}</span>{% endif %}</a>
+  <a class="btn {% if tab != 'items' %}secondary{% endif %}" href="{% url 'loans_center' %}?tab=items">Items prestables</a>{% endif %}
+</div>
+
+{% if tab == 'pending' %}
+<div class="card"><h2>Solicitudes pendientes</h2><div class="table-wrap"><table><tr><th>ITEM</th><th>SOLICITANTE</th><th>FECHA</th><th>OBSERVACIONES</th><th>ACCIÓN</th></tr>
+{% for req in loan_requests %}<tr><td><b>{{req.item.internal_id}}</b><br>{{req.item.name}}</td><td>{{req.requested_by.username}}</td><td>{{req.requested_at|date:"d/m/Y H:i"}}</td><td>{{req.notes|default:"—"}}</td><td><form method="post" class="actions">{% csrf_token %}<input type="hidden" name="request_id" value="{{req.pk}}"><button class="btn small" name="action" value="accept_request">Aceptar préstamo</button><button class="btn small danger" name="action" value="reject_request">Rechazar</button></form></td></tr>{% empty %}<tr><td colspan="5">No hay solicitudes pendientes.</td></tr>{% endfor %}
+</table></div></div>
+
+{% elif tab == 'items' %}
+<div class="card form"><h2>Dar de alta item prestable</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="create_item">{{item_form.as_div}}<div class="actions"><button class="btn">Dar de alta</button></div></form></div>
+<div class="card"><h2>Items prestables</h2><div class="table-wrap"><table><tr><th>ID</th><th>NOMBRE</th><th>CATEGORÍA</th><th>MARCA/MODELO</th><th>Nº SERIE</th><th>ESTADO</th><th>GESTIÓN</th></tr>
+{% for item in loan_items %}<tr><td><b>{{item.internal_id}}</b></td><td>{{item.name}}</td><td>{{item.category|default:"—"}}</td><td>{{item.brand}} {{item.model_reference}}</td><td>{{item.serial_number|default:"—"}}</td><td>{{item.get_status_display}}</td><td>{% if item.status == 'loaned' or item.status == 'pending' %}<span class="muted">Gestionado por solicitud/préstamo</span>{% else %}<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="action" value="item_status"><input type="hidden" name="item_id" value="{{item.pk}}"><button class="btn small secondary" name="status" value="available">Disponible</button><button class="btn small secondary" name="status" value="out">Fuera servicio</button><button class="btn small danger" name="status" value="retired">Baja</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="7">Todavía no hay items prestables.</td></tr>{% endfor %}
+</table></div></div>
+
+{% else %}
+<div class="card form"><h2>Buscar y solicitar préstamo</h2><form method="get"><input type="hidden" name="tab" value="search"><div class="grid2"><div><label>Búsqueda</label><input name="q" value="{{query}}" placeholder="ID, nombre, categoría, marca, modelo o nº serie"></div><div><label>Histórico</label><select name="status"><option value="all" {% if status_filter == 'all' %}selected{% endif %}>Todos</option><option value="active" {% if status_filter == 'active' %}selected{% endif %}>Activos</option><option value="returned" {% if status_filter == 'returned' %}selected{% endif %}>Devueltos</option></select></div><div><label>Desde</label><input type="date" name="date_from" value="{{date_from}}"></div><div><label>Hasta</label><input type="date" name="date_to" value="{{date_to}}"></div></div><div class="actions"><button class="btn">Buscar</button><a class="btn secondary" href="{% url 'loans_center' %}?tab=search">Limpiar</a></div></form></div>
+
+<div class="card"><h2>Material disponible para solicitar</h2><div class="table-wrap"><table><tr><th>ID</th><th>ITEM</th><th>CATEGORÍA</th><th>MARCA / MODELO</th><th>Nº SERIE</th><th>SOLICITAR</th></tr>
+{% for item in available_items %}<tr><td><b>{{item.internal_id}}</b></td><td>{{item.name}}</td><td>{{item.category|default:"—"}}</td><td>{{item.brand}} {{item.model_reference}}</td><td>{{item.serial_number|default:"—"}}</td><td><form method="post" class="actions">{% csrf_token %}<input type="hidden" name="action" value="request"><input type="hidden" name="item" value="{{item.pk}}"><input name="notes" placeholder="Observaciones (opcional)" style="min-width:220px"><button class="btn small">Solicitar préstamo</button></form></td></tr>{% empty %}<tr><td colspan="6">No hay items disponibles que coincidan con la búsqueda.</td></tr>{% endfor %}
+</table></div></div>
+
+<details class="card" open><summary><b>Mis solicitudes pendientes ({{own_pending_requests|length}})</b></summary><div style="margin-top:12px">{% for req in own_pending_requests %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>{{req.item.internal_id}} · {{req.item.name}}</b><br><span class="muted">{{req.requested_at|date:"d/m/Y H:i"}}</span></div>{% empty %}<p class="muted">No tienes solicitudes pendientes.</p>{% endfor %}</div></details>
+
+<div class="card"><h2>Histórico de préstamos</h2><div class="table-wrap"><table><tr><th>OBJETO</th>{% if can_manage %}<th>USUARIO</th>{% endif %}<th>TÉCNICO</th><th>RETIRADA</th><th>DEVOLUCIÓN</th><th>ESTADO</th>{% if can_manage %}<th>ACCIÓN</th>{% endif %}</tr>
+{% for loan in loans %}<tr><td><b>{{loan.object_id}}</b><br><span class="muted">{{loan.object_name}}</span></td>{% if can_manage %}<td>{{loan.borrower.username}}</td>{% endif %}<td>{{loan.technician_name}}</td><td>{{loan.withdrawn_at|date:"d/m/Y H:i"}}</td><td>{% if loan.returned_at %}{{loan.returned_at|date:"d/m/Y H:i"}}{% else %}—{% endif %}</td><td>{% if loan.returned_at %}Devuelto{% else %}Prestado{% endif %}</td>{% if can_manage %}<td>{% if not loan.returned_at %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="return"><input type="hidden" name="loan_id" value="{{loan.pk}}"><button class="btn small">Objeto devuelto</button></form>{% else %}Histórico{% endif %}</td>{% endif %}</tr>{% empty %}<tr><td colspan="7">No hay préstamos que coincidan con los criterios.</td></tr>{% endfor %}
+</table></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Impresión de etiquetas</h1><span class="muted">Brother QL-700 · rollo continuo 62 × 20 mm · reimpresión de objetos existentes o impresión de secuencias completas.</span></div></div>
+<div class="grid2">
+ <div class="card">
+  <h2>Reimprimir un objeto existente</h2>
+  <form method="post">{% csrf_token %}
+   <input type="hidden" name="action" value="reprint">
+   {{reprint_form.as_p}}
+   <p class="muted">El ID procede de la base de datos y no puede escribirse manualmente. Se imprimen 2 copias.</p>
+   <button class="btn" type="submit">Reimprimir 2 etiquetas</button>
+  </form>
+ </div>
+ <div class="card">
+  <h2>Imprimir secuencia / lote</h2>
+  <form method="post">{% csrf_token %}
+   <input type="hidden" name="action" value="sequence">
+   {{sequence_form.as_p}}
+   <p class="muted">Solo se incrementa la parte numérica final. Ejemplo: RAM-0098 → RAM-0099 → RAM-0100. Esta operación imprime etiquetas y no crea ni modifica objetos en la base de datos.</p>
+   <button class="btn" type="submit">Imprimir secuencia</button>
+  </form>
+ </div>
+</div>
+<div class="card"><h2>Impresora configurada</h2><p><b>{{printer_name}}</b></p><p class="muted">La impresora debe estar conectada al servidor y configurada con etiqueta continua de 62 × 20 mm. Para secuencias se puede elegir 1 o 2 copias por identificador.</p></div>
+<div class="card"><h2>Últimos trabajos</h2><div class="table-wrap"><table><thead><tr><th>FECHA</th><th>ID</th><th>COPIAS</th><th>USUARIO</th><th>ESTADO</th><th>DETALLE</th></tr></thead><tbody>{% for job in jobs %}<tr><td>{{job.created_at|date:"d/m/Y H:i"}}</td><td><b>{{job.identifier}}</b></td><td>{{job.copies}}</td><td>{{job.requested_by.username}}</td><td>{{job.get_status_display}}</td><td>{{job.error|default:job.printer_name}}</td></tr>{% empty %}<tr><td colspan="6">Todavía no hay trabajos de impresión.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "inventory/base.html" %}{% block content %}
+<div class="top"><div><h1>Backups automáticos</h1><span class="muted">Programación interna de Almacén. No depende de scripts del sistema.</span></div></div>
+<div class="card form"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">
+<label><input type="checkbox" name="enabled" style="width:auto" {% if schedule.enabled %}checked{% endif %}> Activar copias automáticas</label>
+<div class="grid2"><div><label>Hora</label><input type="time" name="run_time" value="{{schedule.run_time|time:'H:i'}}" required></div><div><label>Copias a conservar</label><input type="number" min="1" max="1000" name="retention" value="{{schedule.retention}}" required></div></div>
+<label>Destino en el servidor</label><input name="destination" value="{{schedule.destination}}" placeholder="D:\Backups\Almacen o /mnt/backups/almacen" required>
+<p class="muted">La aplicación comprobará que puede crear y escribir en esa ruta. Si el servicio estaba detenido a la hora prevista, realizará la copia pendiente al volver a estar en ejecución.</p>
+<div class="actions"><button class="btn">Guardar configuración</button></div></form></div>
+<div class="card"><h2>Estado</h2><p><b>Última ejecución:</b> {% if schedule.last_run_at %}{{schedule.last_run_at|date:"d/m/Y H:i"}} · {{schedule.last_status|default:"—"}}{% else %}Nunca{% endif %}</p>{% if schedule.last_error %}<p class="badge alert">{{schedule.last_error}}</p>{% endif %}<p><b>Próxima ejecución:</b> {% if next_run %}{{next_run|date:"d/m/Y H:i"}}{% else %}Desactivada{% endif %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="run_now"><button class="btn secondary">Ejecutar backup ahora</button></form></div>
+
+{% if request.user.is_superuser %}
+<div class="card"><h2>Destino de protección continua</h2>
+<p class="muted">Puede usar un disco secundario dedicado o, si no existe, un directorio local. PULSIA creará el directorio únicamente dentro de rutas seguras y escribibles.</p>
+{% if disk_config.mode == 'local' and disk_config.local_path %}
+  {% if disk_status.continuous.state == 'ok' %}<p><span class="badge success">PROTEGIDO</span> Directorio local · {{disk_config.local_path}} · copia continua activa</p>{% else %}<p><span class="badge alert">BACKUP LOCAL CON INCIDENCIA</span> {{disk_config.local_path}}</p>{% endif %}
+{% endif %}
+<form method="post" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:14px 0">{% csrf_token %}<input type="hidden" name="action" value="configure_local_backup"><div style="flex:1;min-width:320px"><label>Directorio local alternativo</label><input name="local_path" value="{% if disk_config.mode == 'local' %}{{disk_config.local_path}}{% endif %}" placeholder="Vacío = /almacen/backups/proteccion-continuada"><small class="muted">Permitido bajo /almacen/backups o /var/lib/pulsia-inventario/local-backup. Si se deja vacío, PULSIA crea la ruta recomendada.</small></div><button class="btn secondary" type="submit">Usar backup local</button></form>
+<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+<h2>Disco secundario dedicado</h2>
+<p class="muted">Seleccione visualmente la partición del disco que quedará fijada por UUID como destino de protección. El disco del sistema se bloquea automáticamente.</p>
+{% if disk_config.mode == 'disk' and disk_config.uuid %}
+  {% if disk_status.matches and disk_status.continuous.state == 'ok' %}<p><span class="badge success">PROTEGIDO</span> Disco fijo presente · UUID {{ disk_config.uuid }} · copia continua activa</p>
+  {% else %}<p><span class="badge alert">DISCO FIJO NO DISPONIBLE</span> Seleccione otro destino para reanudar inmediatamente la copia continua.</p>{% endif %}
+  {% if disk_status.continuous.last_backup_at %}<p><b>Última copia continua:</b> {{ disk_status.continuous.last_backup_at }} · <b>Estado:</b> {{ disk_status.continuous.state }}</p>{% endif %}
+{% endif %}
+<div class="storage-grid">
+{% for disk in storage_devices %}
+ <div class="storage-disk {% if disk.contains_root %}system-disk{% endif %}">
+  <div class="storage-head"><strong>{% if disk.transport %}{{ disk.transport|upper }}{% else %}DISCO{% endif %} · {{ disk.model|default:disk.name }}</strong><span>{{ disk.size|filesizeformat }}</span></div>
+  <div class="muted">{{ disk.path }}{% if disk.serial %} · S/N {{ disk.serial }}{% endif %}{% if disk.contains_root %} · DISCO DEL SISTEMA{% endif %}</div>
+  {% for part in disk.children %}
+   <div class="storage-part {% if part.uuid == disk_config.uuid %}selected-storage{% endif %}">
+    <div><b>{{ part.path }}</b> · {{ part.size|filesizeformat }} · {{ part.filesystem|default:'sin filesystem' }}{% if part.mountpoints %} · {{ part.mountpoints|join:', ' }}{% endif %}</div>
+    {% if part.uuid == disk_config.uuid %}<span class="badge success">FIJO</span>
+    {% elif part.selectable %}<form method="post" style="margin:0">{% csrf_token %}<input type="hidden" name="action" value="configure_disk"><input type="hidden" name="device" value="{{ part.path }}"><button class="btn small">Usar como disco fijo</button></form>
+    {% else %}<span class="muted">No elegible</span>{% endif %}
+   </div>
+  {% empty %}<div class="storage-part"><span class="muted">Sin particiones seleccionables.</span></div>{% endfor %}
+ </div>
+{% empty %}<p class="badge alert">No se pudieron enumerar unidades de almacenamiento.</p>{% endfor %}
+</div>
+<p class="muted">PULSIA nunca formatea ni particiona automáticamente. El destino se identifica por UUID aunque Linux cambie /dev/sda, /dev/sdb, etc. Si desaparece, la aplicación continúa funcionando y muestra una alerta al Gestor.</p>
+</div>
+<style>.storage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}.storage-disk{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcfe}.storage-disk.system-disk{background:#f5f6f8}.storage-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:6px}.storage-part{margin-top:10px;padding:10px;border:1px solid #e4e8ef;border-radius:8px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:12px}.selected-storage{border:2px solid #2f8f5b;background:#f0fbf5}</style>
+{% endif %}
+{% endblock %}

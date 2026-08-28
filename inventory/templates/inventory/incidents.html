@@ -1,0 +1,34 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Incidencias</h1><span class="muted">Errores y duplicidades detectados durante las importaciones. Los duplicados se resuelven físicamente, de uno en uno.</span></div></div>
+<div class="card"><div class="table-wrap"><table>
+<thead><tr><th>ESTADO</th><th>TIPO</th><th>HOJA</th><th>FILA</th><th>INCIDENCIA</th><th>DETALLE</th><th>ACCIÓN</th></tr></thead>
+<tbody>
+{% for i in incidents %}
+<tr>
+<td>{{i.get_status_display}}</td><td>{{i.kind}}</td><td>{{i.source_sheet|default:"—"}}</td><td>{{i.source_row|default:"—"}}</td>
+<td><b>{{i.title}}</b>{% if i.kind == 'duplicate_id' %}<br><span class="badge alert">Objeto aislado</span>{% elif i.kind == 'surplus_pickup' and i.status == 'pending' %}<br><span class="badge alert">Pendiente de recogida</span>{% endif %}</td>
+<td>{{i.details}}
+{% if i.kind == 'duplicate_id' and i.payload.resolution %}
+  <div style="margin-top:8px">
+  {% if i.payload.resolution.resolution_type == 'update_existing' %}<b>Registro modificado:</b> {{i.payload.resolution.record_id}}
+  {% else %}<b>Nuevo identificador:</b> {{i.payload.resolution.new_id}}{% endif %}
+  <br><span class="muted">Resuelto por {{i.payload.resolution.resolved_by}}</span></div>
+{% endif %}
+</td>
+<td>
+{% if i.kind == 'surplus_pickup' and i.status == 'pending' %}
+<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="incident_id" value="{{i.pk}}"><button class="btn small" name="action" value="pickup_collected">Componente recogido / retirar alerta</button></form>
+{% elif i.kind == 'duplicate_id' and i.status != 'resolved' and i.status != 'ignored' %}
+<div class="actions"><a class="btn small" href="{% url 'incident_resolve' i.pk %}">Revisar y proponer solución</a><form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="incident_id" value="{{i.pk}}"><button class="btn small secondary" name="action" value="review">Marcar en revisión</button><button class="btn small secondary" name="action" value="ignored">Ignorar</button></form></div>
+<p class="muted" style="margin:6px 0 0">La aplicación no modifica nada automáticamente: compare el registro existente con la fila importada y defina la propuesta que desea aplicar.</p>
+{% elif i.kind == 'duplicate_id' and i.payload.resolution %}
+{% if i.payload.resolution.new_id %}<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="incident_id" value="{{i.pk}}"><button class="btn small secondary" name="action" value="reprint_duplicate">Reimprimir 2 etiquetas</button></form>{% else %}<span class="muted">Resolución aplicada sobre el registro existente.</span>{% endif %}
+{% else %}
+<form method="post" class="actions">{% csrf_token %}<input type="hidden" name="incident_id" value="{{i.pk}}"><button class="btn small secondary" name="action" value="review">Revisar</button><button class="btn small" name="action" value="resolved">Resolver</button><button class="btn small secondary" name="action" value="ignored">Ignorar</button></form>
+{% endif %}
+</td>
+</tr>
+{% empty %}<tr><td colspan="7">No hay incidencias.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

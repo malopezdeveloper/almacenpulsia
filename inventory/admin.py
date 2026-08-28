@@ -1,0 +1,3 @@
+from django.contrib import admin
+from .models import Category,CustomField,Location,Technician,Item,Movement,Incident,ImportJob,AuditLog,UserProfile,InventoryTable,InventoryField,InventoryRecord,RecordMovement,Reservation,ReservationView,ChatMessage,Loan,LoanItem,LoanRequest,ClientBatchSheet,ClientBatchField,ClientBatchRow,ClientBatchChange,ServiceAccess,IPBan
+for model in [Category,CustomField,Location,Technician,Item,Movement,Incident,ImportJob,AuditLog,UserProfile,InventoryTable,InventoryField,InventoryRecord,RecordMovement,Reservation,ReservationView,ChatMessage,Loan,LoanItem,LoanRequest,ClientBatchSheet,ClientBatchField,ClientBatchRow,ClientBatchChange,ServiceAccess,IPBan]: admin.site.register(model)

@@ -1,0 +1,62 @@
+{% extends 'inventory/base.html' %}
+{% block title %}Mi Pizarra · PULSIA Inventario{% endblock %}
+{% block content %}
+{% include "inventory/production_tabs.html" %}
+<style>
+.board-head{display:flex;gap:14px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap}.board-meta{display:flex;gap:10px;flex-wrap:wrap}.pill{background:#fff;border:1px solid var(--line);padding:8px 12px;border-radius:999px}.note-card{background:#fffdf2;border:1px solid #eadfa4;border-radius:12px;padding:18px;box-shadow:0 5px 18px #13274610}.quick-grid{display:grid;grid-template-columns:minmax(220px,2fr) minmax(100px,.7fr) minmax(110px,.8fr) minmax(230px,1.5fr) minmax(170px,1fr) 100px auto;gap:10px;align-items:end}.hour-card{margin-top:18px}.hour-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.qty-controls{display:flex;align-items:center;gap:6px}.qty-controls form{display:inline-flex;gap:6px;margin:0}.qty-value{min-width:42px;text-align:center;font-weight:800;font-size:16px}.locked{opacity:.7}.board-table{width:100%;border-collapse:collapse;margin-top:10px}.board-table th,.board-table td{padding:10px;border-bottom:1px solid var(--line);text-align:left}.board-total{font-size:26px;font-weight:900;color:var(--navy)}@media(max-width:850px){.quick-grid{grid-template-columns:1fr}.board-table{display:block;overflow-x:auto}}
+</style>
+<div class="board-head"><div><h1>Mi Pizarra de Producción</h1><span class="muted">Producción por técnico y hora. El usuario selecciona la zona de origen y la zona de destino en cada registro; ambas pueden cambiar tantas veces como sea necesario.</span></div><div class="board-meta"><span class="pill"><b>Técnico:</b> {{ selected_user.get_full_name|default:selected_user.username }}</span><span class="pill"><b>Jornada:</b> {{ selected_date|date:"d/m/Y" }}</span><span class="pill"><b>Total:</b> {{ total_day }} uds</span></div></div>
+
+{% if user.is_staff %}
+<div class="card" style="margin-top:18px"><form method="get" class="quick-grid" style="grid-template-columns:1fr 1fr auto auto"><div><label>Técnico</label><select name="user">{% for u in users %}<option value="{{u.id}}" {% if u.id == selected_user.id %}selected{% endif %}>{{u.get_full_name|default:u.username}}</option>{% endfor %}</select></div><div><label>Jornada</label><input type="date" name="date" value="{{selected_date|date:'Y-m-d'}}"></div><button class="btn">Consultar</button><a class="btn secondary" href="{% url 'production_reports' %}">Informes globales</a></form></div>
+{% else %}
+<div style="margin-top:14px"><form method="get" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div><label>Consultar otra jornada</label><input type="date" name="date" max="{{today|date:'Y-m-d'}}" value="{{selected_date|date:'Y-m-d'}}"></div><button class="btn secondary">Ver jornada</button>{% if selected_date != today %}<a class="btn" href="{% url 'production_board' %}">Volver a hoy</a>{% endif %}</form></div>
+{% endif %}
+
+{% if can_add_model %}
+<div class="card" style="margin-top:18px"><h2 style="margin-top:0">Catálogo de modelos</h2><p class="muted">Gestor y Administradores pueden añadir modelos, retirarlos del catálogo y mantener una lista de exclusiones para que los errores de MySQL no reaparezcan.</p><form method="post" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="action" value="add_model"><div style="flex:1;min-width:260px"><label>Introducir un modelo a mano</label><input name="new_model_name" maxlength="160" required autocomplete="off" placeholder="Ej. HP ELITEBOOK 840 G7"></div><button class="btn" type="submit">＋ Añadir al catálogo</button></form>
+<details style="margin-top:14px"><summary><b>Gestionar catálogo y exclusiones</b></summary><div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px">
+<div><h3>Modelos activos</h3><div style="max-height:300px;overflow:auto">{% for m in all_production_models %}{% if m.is_active %}<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0"><span>{{m.name}}</span><form method="post" onsubmit="return confirm('Se retirará del catálogo y se añadirá a exclusiones. ¿Continuar?')">{% csrf_token %}<input type="hidden" name="action" value="exclude_model"><input type="hidden" name="model_id" value="{{m.id}}"><button class="btn secondary" type="submit">Excluir</button></form></div>{% endif %}{% endfor %}</div></div>
+<div><h3>Lista de exclusiones</h3><div style="max-height:300px;overflow:auto">{% for x in model_exclusions %}<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;border-bottom:1px solid var(--line);padding:6px 0"><span>{{x.name}}</span><form method="post">{% csrf_token %}<input type="hidden" name="action" value="restore_model_exclusion"><input type="hidden" name="exclusion_id" value="{{x.id}}"><button class="btn secondary" type="submit">Rehabilitar</button></form></div>{% empty %}<p class="muted">Sin exclusiones.</p>{% endfor %}</div></div>
+</div></details></div>
+{% endif %}
+
+{% if can_add_processor %}
+<div class="card" style="margin-top:18px"><h2 style="margin-top:0">Catálogo de procesadores</h2><p class="muted">Lista precargada de procesadores habituales. Solo el Gestor puede ampliarla manualmente.</p><form method="post" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="action" value="add_processor"><div style="flex:1;min-width:260px"><label>Introducir procesador</label><input name="new_processor_name" maxlength="160" required autocomplete="off" placeholder="Ej. INTEL CORE I5-13500"></div><button class="btn" type="submit">＋ Añadir procesador</button></form></div>
+{% endif %}
+
+{% if can_auto_import_models %}
+<div class="card" style="margin-top:18px">
+  <h2 style="margin-top:0">Importación automática de modelos desde MySQL</h2>
+  <p class="muted">Solo visible para el Gestor. La aplicación consulta únicamente <code>Units.Manufacturer</code> y <code>Units.Model</code>. La contraseña se almacena cifrada y nunca se muestra de nuevo.</p>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="save_mysql_source">
+    <div class="quick-grid" style="grid-template-columns:1.2fr 110px 1.2fr 1.2fr">
+      <div><label>IP / host MySQL</label><input name="mysql_host" value="{{ mysql_source.host|default:'' }}" required placeholder="192.168.1.50"></div>
+      <div><label>Puerto</label><input type="number" name="mysql_port" value="{{ mysql_source.port|default:3306 }}" min="1" max="65535" required></div>
+      <div><label>Base de datos</label><input name="mysql_database" value="{{ mysql_source.database|default:'' }}" required placeholder="almacen"></div>
+      <div><label>Usuario MySQL</label><input name="mysql_username" value="{{ mysql_source.username|default:'' }}" required autocomplete="off"></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:10px">
+      <div style="flex:1;min-width:260px"><label>Contraseña MySQL</label><input type="password" name="mysql_password" autocomplete="new-password" placeholder="{% if mysql_source %}Dejar en blanco para conservar la actual{% else %}Contraseña obligatoria{% endif %}"></div>
+      <button class="btn" type="submit">Guardar conexión</button>
+    </div>
+  </form>
+  {% if mysql_source %}
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="test_mysql_source"><button class="btn secondary" type="submit">Probar conexión</button></form>
+    <form method="post" onsubmit="return confirm('Se añadirán al catálogo los modelos nuevos encontrados en Units. Los existentes no se modificarán. ¿Continuar?')">{% csrf_token %}<input type="hidden" name="action" value="import_mysql_models"><button class="btn" type="submit">Importar modelos automáticamente</button></form>
+    <span class="muted" style="align-self:center">Configurado: {{ mysql_source.username }}@{{ mysql_source.host }}:{{ mysql_source.port }}/{{ mysql_source.database }}</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if can_edit_current %}
+<div class="note-card" style="margin-top:20px"><h2 style="margin-top:0">Añadir producción · {{current_hour|stringformat:"02d"}}:00–{{current_hour|add:1|stringformat:"02d"}}:00</h2><form method="post">{% csrf_token %}<input type="hidden" name="action" value="add"><div class="quick-grid"><div><label>Modelo</label><select name="production_model" required><option value="">Seleccione un modelo...</option>{% for m in production_models %}<option value="{{m.id}}">{{m.name}}</option>{% endfor %}</select></div><div><label>RAM_GB</label><input type="number" name="ram_gb" list="ram-options" min="1" value="8" required><datalist id="ram-options"><option value="4"><option value="8"><option value="16"><option value="32"><option value="64"></datalist></div><div><label>Disco_GB</label><input type="number" name="disk_gb" list="disk-options" min="1" value="256" required><datalist id="disk-options"><option value="128"><option value="240"><option value="256"><option value="500"><option value="512"></datalist></div><div><label>Procesador</label><select name="processor" required><option value="">Seleccione procesador...</option>{% for p in processors %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></div><div><label>Zona de origen</label><select name="origin_zone" required><option value="">Seleccione origen...</option>{% for value,label in zones %}<option value="{{value}}">{{label}}</option>{% endfor %}</select></div><div><label>Zona de destino</label><select name="zone" required><option value="">Seleccione destino...</option>{% for value,label in zones %}<option value="{{value}}">{{label}}</option>{% endfor %}</select></div><div><label>Cantidad</label><input type="number" name="quantity" value="1" min="1" required></div><button class="btn" type="submit">＋ Añadir</button></div></form></div>
+{% elif selected_date == today and not user.is_staff %}<p class="muted" style="margin-top:18px">La jornada consultada no corresponde a la franja editable actual.</p>{% endif %}
+
+{% if hours %}{% for block in hours %}
+<div class="card hour-card {% if block.closed %}locked{% endif %}"><div class="hour-title"><div><h2 style="margin:0">{{block.label}}</h2><span class="muted">{% if block.editable %}Franja actual · editable{% elif block.closed %}🔒 Franja cerrada{% else %}Consulta{% endif %}</span></div><div class="board-total">{{block.total}} uds</div></div>
+{% if block.entries %}<table class="board-table"><thead><tr><th>Modelo</th><th>RAM</th><th>Disco</th><th>Procesador</th><th>Origen</th><th>Destino</th><th>Cantidad</th><th></th></tr></thead><tbody>{% for e in block.entries %}<tr><td><b>{{e.model_name}}</b></td><td>{% if e.ram_gb %}{{e.ram_gb}} GB{% else %}—{% endif %}</td><td>{% if e.disk_gb %}{{e.disk_gb}} GB{% else %}—{% endif %}</td><td>{{e.processor_name|default:"—"}}</td><td>{{e.get_origin_zone_display|default:"—"}}</td><td>{{e.get_zone_display}}</td><td><span class="qty-value">{{e.quantity}}</span></td><td>{% if block.editable %}<div class="qty-controls"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="dec"><input type="hidden" name="entry_id" value="{{e.id}}"><button class="btn secondary" type="submit" title="Restar una unidad">−</button></form><form method="post">{% csrf_token %}<input type="hidden" name="action" value="set"><input type="hidden" name="entry_id" value="{{e.id}}"><input type="number" name="quantity" min="0" value="{{e.quantity}}" style="width:80px"><button class="btn secondary" type="submit">Guardar</button></form><form method="post">{% csrf_token %}<input type="hidden" name="action" value="inc"><input type="hidden" name="entry_id" value="{{e.id}}"><button class="btn" type="submit" title="Sumar una unidad">＋</button></form></div>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted">Todavía no hay producción registrada en esta franja.</p>{% endif %}</div>
+{% endfor %}{% else %}<div class="card" style="margin-top:18px"><p class="muted">No hay producción registrada para esta jornada.</p></div>{% endif %}
+{% endblock %}

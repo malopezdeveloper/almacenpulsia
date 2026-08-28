@@ -1,0 +1,75 @@
+{% extends "inventory/base.html" %}
+{% block content %}
+<div class="top"><div><h1>Resolver incidencia</h1><span class="muted">Revise los datos y defina usted mismo la modificación. Nada se aplicará hasta confirmar la propuesta.</span></div></div>
+
+<div class="card">
+  <h2>{{ incident.title }}</h2>
+  <p>{{ incident.details }}</p>
+  <p class="muted">Origen: {{ incident.source_file|default:"—" }} · Hoja {{ incident.source_sheet|default:"—" }} · Fila {{ incident.source_row|default:"—" }} · ID en conflicto: <b>{{ original_id }}</b></p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin:16px 0">
+  <div class="card">
+    <h2>Registro existente</h2>
+    {% if conflict_rows %}
+      {% for item in conflict_rows %}
+      <div style="margin-bottom:14px">
+        <p><b>{{ item.record.table.name }} / {{ item.record.internal_id }}</b> <span class="badge">{{ item.record.get_status_display }}</span></p>
+        <div class="table-wrap"><table><tbody>
+        {% for row in item.values %}<tr><th style="width:40%">{{ row.name }}</th><td>{{ row.value|default:"—" }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div>
+      {% endfor %}
+    {% else %}<p>No se ha localizado actualmente ningún registro con ese identificador.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Fila que produjo la incidencia</h2>
+    <div class="table-wrap"><table><tbody>
+    {% for row in incoming_rows %}<tr><th style="width:40%">{{ row.field.name }}</th><td>{{ row.incoming|default:"—" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<div class="card form">
+  <h2>Propuesta de resolución</h2>
+  {% if form.non_field_errors %}<div class="alert">{{ form.non_field_errors }}</div>{% endif %}
+  <form method="post" id="resolution-form">{% csrf_token %}
+    <label>{{ form.resolution_action.label }}</label>{{ form.resolution_action }}{{ form.resolution_action.errors }}
+
+    {% if existing_record %}
+    <section id="update-existing" style="margin-top:16px">
+      <h3>Modificar {{ existing_record.internal_id }}</h3>
+      <p class="muted">Los campos parten del valor actual. Cambie únicamente lo que considere correcto después de comparar ambos registros.</p>
+      {% for bf in form %}{% if bf.name|slice:":9" == "existing_" %}<label>{{ bf.label }}</label>{{ bf }}{{ bf.errors }}{% endif %}{% endfor %}
+    </section>
+    {% endif %}
+
+    <section id="create-new" style="margin-top:16px">
+      <h3>Crear un registro nuevo</h3>
+      <p class="muted">Los campos parten de la fila importada, pero puede corregirlos antes de crear el registro.</p>
+      <label>{{ form.new_internal_id.label }}</label>{{ form.new_internal_id }}{{ form.new_internal_id.errors }}
+      {% for bf in form %}{% if bf.name|slice:":4" == "new_" and bf.name != "new_internal_id" %}<label>{{ bf.label }}</label>{{ bf }}{{ bf.errors }}{% endif %}{% endfor %}
+    </section>
+
+    <label>{{ form.resolution_note.label }}</label>{{ form.resolution_note }}{{ form.resolution_note.errors }}
+    <label style="display:flex;gap:8px;align-items:center">{{ form.print_labels }} {{ form.print_labels.label }}</label>{{ form.print_labels.errors }}
+    <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="{% url 'incidents' %}">Cancelar</a><button class="btn" type="submit">Aplicar propuesta y resolver</button><button class="btn secondary" type="submit" name="force_save" value="1" onclick="return confirm('Se guardarán los valores tal como están, ignorando validaciones de formato. El ID seguirá protegido y no podrá duplicarse ni modificarse. ¿Continuar?')">Guardar de todos modos</button></div>
+    <p class="muted" style="margin-top:10px"><b>Guardado forzado:</b> conserva los valores introducidos aunque no coincidan con el tipo configurado del campo. El identificador interno nunca se modifica ni puede duplicarse.</p>
+  </form>
+</div>
+<script>
+(function(){
+  function sync(){
+    const selected=document.querySelector('input[name="resolution_action"]:checked');
+    const action=selected ? selected.value : '';
+    const up=document.getElementById('update-existing');
+    const nw=document.getElementById('create-new');
+    if(up) up.style.display=action==='update_existing'?'block':'none';
+    if(nw) nw.style.display=action==='create_new'?'block':'none';
+  }
+  document.querySelectorAll('input[name="resolution_action"]').forEach(el=>el.addEventListener('change',sync));
+  sync();
+})();
+</script>
+{% endblock %}

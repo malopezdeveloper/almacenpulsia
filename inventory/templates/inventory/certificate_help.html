@@ -1,0 +1,48 @@
+{% extends "inventory/base.html" %}
+{% block title %}Certificado HTTPS · PULSIA Inventario{% endblock %}
+{% block content %}
+<div class="top"><div><h1>Certificado HTTPS PULSIA</h1><span class="muted">Instale la CA de esta instancia para que el navegador confíe en el servidor sin advertencias.</span></div></div>
+<div class="card">
+  <h2>1. Obtener el certificado</h2>
+  {% if cert_ready %}
+    <p>El servidor ha generado correctamente su CA privada. Este archivo es <b>solo el certificado público de confianza</b>; la clave privada permanece en el servidor y nunca se descarga.</p>
+    <p><a class="btn" href="{% url 'certificate_download' %}">⬇ Instalar / descargar certificado</a></p>
+    <p class="muted">SHA-256 de la CA:<br><code style="word-break:break-all">{{ cert_fingerprint }}</code></p>
+  {% else %}
+    <p style="color:#c83d36;font-weight:700">La CA todavía no está disponible en el servidor. Revise el servicio Caddy o vuelva a ejecutar el instalador HTTPS.</p>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>2. Windows · Edge / Chrome</h2>
+  <ol>
+    <li>Pulse el botón anterior y abra <b>PULSIA-Inventario-Root-CA.crt</b>.</li>
+    <li>Pulse <b>Instalar certificado</b>.</li>
+    <li>Seleccione <b>Equipo local</b> (puede solicitar credenciales de administrador).</li>
+    <li>Seleccione <b>Colocar todos los certificados en el siguiente almacén</b>.</li>
+    <li>Elija <b>Entidades de certificación raíz de confianza</b> y finalice.</li>
+    <li>Cierre y vuelva a abrir el navegador. Entre de nuevo usando HTTPS.</li>
+  </ol>
+</div>
+<div class="card">
+  <h2>3. Firefox</h2>
+  <ol>
+    <li>Descargue la CA.</li>
+    <li>Abra Ajustes → Privacidad y seguridad → Certificados → Ver certificados.</li>
+    <li>En Autoridades, pulse Importar y seleccione la CA PULSIA.</li>
+    <li>Autorice la confianza para identificar sitios web y reinicie Firefox.</li>
+  </ol>
+</div>
+<div class="card">
+  <h2>4. Ubuntu / Debian</h2>
+  <p>Descargue primero el certificado y, desde una terminal, instálelo con permisos administrativos:</p>
+  <pre style="white-space:pre-wrap;background:#f7f9fb;padding:14px;border-radius:8px;border:1px solid #dfe5ed">sudo cp PULSIA-Inventario-Root-CA.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates</pre>
+  <p class="muted">Después reinicie el navegador.</p>
+</div>
+<div class="card">
+  <h2>Direcciones admitidas por el servidor</h2>
+  <p>La instalación HTTPS acepta el nombre <b>almacen</b>, el nombre <b>pizarra</b>, <b>127.0.0.1</b> y la IP LAN detectada durante la instalación.</p>
+  <p>Ejemplos: <code>https://almacen</code>, <code>https://pizarra</code> o <code>https://192.168.x.x</code>.</p>
+  <p class="muted">Para usar “almacen” o “pizarra” desde otro ordenador, esos nombres deben resolver a la IP del servidor mediante DNS o el archivo hosts del cliente. El acceso por IP no necesita resolución DNS.</p>
+</div>
+{% endblock %}

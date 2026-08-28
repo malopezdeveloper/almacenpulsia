@@ -1,0 +1,9 @@
+{% extends "inventory/base.html" %}{% block content %}
+<div class="top"><div><h1>Entregar componente sobrante</h1><span class="muted">Comunica una pieza para que Administrador/Gestor pase a recogerla.</span></div></div>
+<div class="card form"><form method="post">{% csrf_token %}
+<label>Categoría / tipo de dispositivo</label><select name="table_id" required><option value="">Seleccione…</option>{% for table in tables %}<option value="{{table.pk}}">{{table.name}}</option>{% endfor %}</select>
+<label>Ubicación</label><select name="location" required><option value="">Seleccione…</option>{% for value,label in locations %}<option value="{{value}}">{{label}}</option>{% endfor %}</select>
+<label>Estado</label><select name="state" required><option value="">Seleccione…</option>{% for value in states %}<option value="{{value}}">{{value}}</option>{% endfor %}</select>
+<div class="actions" style="margin-top:18px"><button class="btn">Comunicar componente</button></div>
+</form></div>
+{% endblock %}
