@@ -1,0 +1,7 @@
+from django.conf import settings
+from django.db import migrations,models
+import django.db.models.deletion
+
+class Migration(migrations.Migration):
+    dependencies=[('inventory','0032_developer_role'),migrations.swappable_dependency(settings.AUTH_USER_MODEL)]
+    operations=[migrations.CreateModel(name='DevelopmentBatch',fields=[('id',models.BigAutoField(auto_created=True,primary_key=True,serialize=False,verbose_name='ID')),('token',models.CharField(db_index=True,max_length=32,unique=True)),('source',models.CharField(blank=True,max_length=255)),('status',models.CharField(choices=[('active','Activo'),('reverted','Revertido'),('purged','Eliminado por vaciado')],db_index=True,default='active',max_length=12)),('manifest',models.JSONField(blank=True,default=dict)),('created_at',models.DateTimeField(auto_now_add=True,db_index=True)),('reverted_at',models.DateTimeField(blank=True,null=True)),('created_by',models.ForeignKey(on_delete=django.db.models.deletion.PROTECT,related_name='development_batches_created',to=settings.AUTH_USER_MODEL)),('reverted_by',models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='development_batches_reverted',to=settings.AUTH_USER_MODEL))],options={'ordering':('-created_at','-pk')})]
