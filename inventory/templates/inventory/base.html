@@ -30,7 +30,7 @@
 {% endif %}
 {% if user.is_superuser %}
 <details class="nav-group" data-nav-group="superuser"><summary>MÁXIMOS PERMISOS</summary>
-<a href="{% url 'import_excel' %}">↥ Importar Excel</a><a href="{% url 'export_excel' %}">↧ Exportar Excel</a><a href="{% url 'database_backup' %}">◫ Exportar copia de la base</a><a id="backup-disk-alert" href="{% url 'backup_settings' %}" class="{% if backup_disk_alert %}attention{% endif %}">◴ Backups automáticos <span id="backup-disk-badge" class="badge alert" {% if not backup_disk_alert %}hidden{% endif %}>BACKUP</span></a><a href="{% url 'database_restore' %}">▣ Restaurar copia de la base</a><a href="{% url 'users_panel' %}" class="{% if password_reset_requests_count or pending_access_upgrade_count %}attention{% endif %}">♙ Usuarios y claves <span class="badge alert" {% if not password_reset_requests_count %}hidden{% endif %}>{{password_reset_requests_count|default:0}}</span><span class="badge alert" {% if not pending_access_upgrade_count %}hidden{% endif %}>{{pending_access_upgrade_count|default:0}} acceso</span></a><a href="{% url 'access_control' %}">◉ Accesos e IPs</a><a href="{% url 'zones_manager' %}">⌖ Zonas</a><a href="{% url 'truncate_inventory' %}">⚠ Vaciar inventario</a><a href="{% url 'stop_service' %}">■ Detener servicio</a>
+<a href="{% url 'aiken_settings' %}">⇄ Servidor AIKEN</a><a href="{% url 'component_types_manager' %}">⚙ Tipos de componente</a><a href="{% url 'roles_manager' %}">♙ Roles y permisos</a><a href="{% url 'import_excel' %}">↥ Importar Excel</a><a href="{% url 'export_excel' %}">↧ Exportar Excel</a><a href="{% url 'database_backup' %}">◫ Exportar copia de la base</a><a id="backup-disk-alert" href="{% url 'backup_settings' %}" class="{% if backup_disk_alert %}attention{% endif %}">◴ Backups automáticos <span id="backup-disk-badge" class="badge alert" {% if not backup_disk_alert %}hidden{% endif %}>BACKUP</span></a><a href="{% url 'database_restore' %}">▣ Restaurar copia de la base</a><a href="{% url 'users_panel' %}" class="{% if password_reset_requests_count or pending_access_upgrade_count %}attention{% endif %}">♙ Usuarios y claves <span class="badge alert" {% if not password_reset_requests_count %}hidden{% endif %}>{{password_reset_requests_count|default:0}}</span><span class="badge alert" {% if not pending_access_upgrade_count %}hidden{% endif %}>{{pending_access_upgrade_count|default:0}} acceso</span></a><a href="{% url 'access_control' %}">◉ Accesos e IPs</a><a href="{% url 'zones_manager' %}">⌖ Zonas</a><a href="{% url 'truncate_inventory' %}">⚠ Vaciar inventario</a><a href="{% url 'stop_service' %}">■ Detener servicio</a>
 </details>
 {% endif %}
 <div class="nav-session"><small>SESIÓN</small><div class="role"><strong>{% if user.is_superuser %}Máximos permisos{% elif user.is_staff %}Administrador{% else %}Usuario{% endif %}</strong><span>{{user.username}}</span></div><form method="post" action="{% url 'logout' %}" style="padding:10px">{% csrf_token %}<button type="submit" style="border:0;background:transparent;color:#c2cee0;padding:0;cursor:pointer">↪ Cerrar sesión</button></form></div>
@@ -43,71 +43,11 @@ function updateAlert(link,badge,count,attention){if(!link)return;link.classList.
 const securityCsrf=document.querySelector('#security-csrf-form input[name=csrfmiddlewaretoken]')?.value||'';
 async function sendClientFingerprint(){
   try{
-    const payload={
-      language:navigator.language||'',
-      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',
-      screen:`${window.screen?.width||0}x${window.screen?.height||0}`,
-      platform:navigator.userAgentData?.platform||navigator.platform||'',
-      hardware_concurrency:navigator.hardwareConcurrency||null,
-      device_memory:navigator.deviceMemory||null
-    };
-    await fetch('{% url "security_fingerprint" %}',{
-      method:'POST',credentials:'same-origin',
-      headers:{'Content-Type':'application/json','X-CSRFToken':securityCsrf,'X-Requested-With':'XMLHttpRequest'},
-      body:JSON.stringify(payload)
-    });
+    const payload={language:navigator.language||'',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',screen:`${window.screen?.width||0}x${window.screen?.height||0}`,platform:navigator.userAgentData?.platform||navigator.platform||'',hardware_concurrency:navigator.hardwareConcurrency||null,device_memory:navigator.deviceMemory||null};
+    await fetch('{% url "security_fingerprint" %}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':securityCsrf,'X-Requested-With':'XMLHttpRequest'},body:JSON.stringify(payload)});
   }catch(error){}
 }
-async function pollSecuritySession(){
-  try{
-    const response=await fetch('{% url "security_session_state" %}',{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}});
-    if(response.status===401){
-      window.location.href='{% url "login" %}';
-      return;
-    }
-    if(!response.ok)return;
-    const data=await response.json();
-    if(data.force_logout)window.location.href='{% url "login" %}';
-  }catch(error){}
-}
-sendClientFingerprint();
-setInterval(pollSecuritySession,10000);
-
-// Menú lateral plegable: conserva el estado por usuario/navegador y abre siempre
-// el grupo correspondiente a la pantalla actual para evitar un lateral gigante.
-(function initCollapsibleNavigation(){
-  const groups=[...document.querySelectorAll('nav details.nav-group')];
-  const storageKey='pulsia-nav-groups-v1';
-  let saved={};
-  try{saved=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){saved={}}
-  const currentPath=(location.pathname.replace(/\/$/,'')||'/');
-  let activeGroup=null;
-  groups.forEach(group=>{
-    const key=group.dataset.navGroup;
-    if(Object.prototype.hasOwnProperty.call(saved,key))group.open=Boolean(saved[key]);
-    const links=[...group.querySelectorAll('a[href]')];
-    for(const link of links){
-      const url=new URL(link.href,location.origin);
-      const linkPath=(url.pathname.replace(/\/$/,'')||'/');
-      const exact=currentPath===linkPath;
-      const nested=linkPath!=='/' && currentPath.startsWith(linkPath+'/');
-      if(exact||nested){link.classList.add('active');activeGroup=group;break}
-    }
-    const refreshGroupAlert=()=>{
-      const hasRed=Boolean(group.querySelector('a.attention, a.security-link.red'));
-      const hasWarning=!hasRed && Boolean(group.querySelector('a.security-link.yellow'));
-      group.classList.toggle('has-attention',hasRed);
-      group.classList.toggle('has-warning',hasWarning);
-    };
-    refreshGroupAlert();
-    new MutationObserver(refreshGroupAlert).observe(group,{attributes:true,subtree:true,attributeFilter:['class','hidden']});
-    group.addEventListener('toggle',()=>{
-      let state={};
-      try{state=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){}
-      state[key]=group.open;
-      try{localStorage.setItem(storageKey,JSON.stringify(state))}catch(error){}
-    });
-  });
-  if(activeGroup)activeGroup.open=true;
-})();
+async function pollSecuritySession(){try{const response=await fetch('{% url "security_session_state" %}',{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}});if(response.status===401){window.location.href='{% url "login" %}';return}if(!response.ok)return;const data=await response.json();if(data.force_logout)window.location.href='{% url "login" %}'}catch(error){}}
+sendClientFingerprint();setInterval(pollSecuritySession,10000);
+(function initCollapsibleNavigation(){const groups=[...document.querySelectorAll('nav details.nav-group')],storageKey='pulsia-nav-groups-v1';let saved={};try{saved=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){saved={}}const currentPath=(location.pathname.replace(/\/$/,'')||'/');let activeGroup=null;groups.forEach(group=>{const key=group.dataset.navGroup;if(Object.prototype.hasOwnProperty.call(saved,key))group.open=Boolean(saved[key]);const links=[...group.querySelectorAll('a[href]')];for(const link of links){const url=new URL(link.href,location.origin),linkPath=(url.pathname.replace(/\/$/,'')||'/'),exact=currentPath===linkPath,nested=linkPath!=='/'&&currentPath.startsWith(linkPath+'/');if(exact||nested){link.classList.add('active');activeGroup=group;break}}const refreshGroupAlert=()=>{const hasRed=Boolean(group.querySelector('a.attention, a.security-link.red')),hasWarning=!hasRed&&Boolean(group.querySelector('a.security-link.yellow'));group.classList.toggle('has-attention',hasRed);group.classList.toggle('has-warning',hasWarning)};refreshGroupAlert();new MutationObserver(refreshGroupAlert).observe(group,{attributes:true,subtree:true,attributeFilter:['class','hidden']});group.addEventListener('toggle',()=>{let state={};try{state=JSON.parse(localStorage.getItem(storageKey)||'{}')||{}}catch(error){}state[key]=group.open;try{localStorage.setItem(storageKey,JSON.stringify(state))}catch(error){}})});if(activeGroup)activeGroup.open=true})();
 </script></body></html>
