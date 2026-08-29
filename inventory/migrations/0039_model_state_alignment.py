@@ -23,7 +23,17 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='component',
             name='status',
-            field=models.CharField(choices=[('available', 'Disponible'), ('reserved', 'Reservado'), ('installed', 'Instalado'), ('rma', 'RMA'), ('scrapped', 'Merma')], db_index=True, default='available', max_length=20),
+            field=models.CharField(
+                choices=[
+                    ('active', 'Disponible'),
+                    ('reserved', 'Reservado'),
+                    ('installed', 'Instalado'),
+                    ('low', 'Baja'),
+                ],
+                db_index=True,
+                default='active',
+                max_length=16,
+            ),
         ),
         migrations.AlterField(
             model_name='securityaccessevent',
