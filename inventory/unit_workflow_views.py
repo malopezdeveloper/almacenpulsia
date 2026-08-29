@@ -21,8 +21,7 @@ def _close_intervention(i,now,destination=None):
  if i.finished_at:return i
  i.finished_at=now;i.duration_seconds=max(0,int((now-i.created_at).total_seconds()))
  if destination is not None:i.destination_zone=destination
- i.save(update_fields=['finished_at','duration_seconds','destination_zone'])
- return i
+ i.save(update_fields=['finished_at','duration_seconds','destination_zone']);return i
 @login_required
 def serial_lookup(request):
  if not _can_work(request.user):return _deny()
@@ -44,7 +43,8 @@ def my_open_interventions(request):
  if not _can_work(request.user):return _deny()
  now=timezone.now();rows=[]
  qs=UnitIntervention.objects.filter(worker=request.user,finished_at__isnull=True).select_related('unit','unit__order','zone').order_by('created_at','pk')
- for i in qs:rows.append({'id':i.pk,'serial_number':i.unit.serial_number,'order':i.unit.order.name if i.unit.order_id else 'STOCK','zone':i.zone.name,'zone_id':i.zone_id,'started_at':timezone.localtime(i.created_at).strftime('%d/%m/%Y %H:%M:%S'),'elapsed_seconds':max(0,int((now-i.created_at).total_seconds())),'url':f'/produccion/intervencion/{i.pk}/'})
+ for i in qs:
+  u=i.unit;rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'zone':i.zone.name,'zone_id':i.zone_id,'started_at':timezone.localtime(i.created_at).strftime('%d/%m/%Y %H:%M:%S'),'elapsed_seconds':max(0,int((now-i.created_at).total_seconds())),'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/'})
  return JsonResponse({'results':rows})
 @login_required
 @require_POST
@@ -67,14 +67,11 @@ def start_unit_intervention(request):
  with transaction.atomic():
   physical=PhysicalUnit.objects.select_for_update().get(pk=unit.physical_unit_id);now=timezone.now();current=PhysicalUnitLocation.objects.select_for_update().filter(physical_unit=physical).select_related('intervention','zone','worker').first()
   if current and current.zone_id==origin.pk:
-   if current.worker_id==request.user.pk:
-    messages.info(request,f'{sn} ya está en {origin.name} y continúa contando tiempo.');return redirect('production_board')
+   if current.worker_id==request.user.pk:messages.info(request,f'{sn} ya está en {origin.name} y continúa contando tiempo.');return redirect('production_board')
    messages.error(request,f'{sn} ya está físicamente en {origin.name}, asignada a {current.worker.get_username()}. No puede duplicarse.');return redirect('production_board')
   if current:_close_intervention(current.intervention,now,origin)
-  # Defensa adicional para datos antiguos: no puede quedar otra estancia abierta del mismo equipo físico.
   for old in UnitIntervention.objects.select_for_update().filter(unit__physical_unit=physical,finished_at__isnull=True):_close_intervention(old,now,origin)
-  snap=_snapshot(unit);snap.update(extra);i=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source=source_name,source_snapshot=snap)
-  PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':i,'worker':request.user,'entered_at':now})
+  snap=_snapshot(unit);snap.update(extra);i=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source=source_name,source_snapshot=snap);PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':i,'worker':request.user,'entered_at':now})
  messages.success(request,f'{sn} está ahora en {origin.name}. La estancia anterior se cerró automáticamente si existía y el tiempo de {origin.name} empieza ahora.');return redirect('production_board')
 @login_required
 def unit_workbench(request,intervention_pk):
@@ -88,9 +85,7 @@ def finish_unit_intervention(request,intervention_pk):
  with transaction.atomic():
   i=get_object_or_404(UnitIntervention.objects.select_for_update().select_related('unit','unit__physical_unit','zone'),pk=intervention_pk,worker=request.user,finished_at__isnull=True);dest=get_object_or_404(ProductionZone,pk=request.POST.get('destination_zone'),is_active=True)
   if dest.pk==i.zone_id:messages.error(request,'La zona de destino debe ser distinta de la zona en la que estás trabajando.');return redirect('unit_workbench',intervention_pk=i.pk)
-  now=timezone.now();_close_intervention(i,now,dest)
-  # Terminar registra el servicio prestado por la zona de origen. El destino no recibe tiempo hasta que alguien abra allí la unidad.
-  PhysicalUnitLocation.objects.filter(physical_unit=i.unit.physical_unit,intervention=i).delete()
+  now=timezone.now();_close_intervention(i,now,dest);PhysicalUnitLocation.objects.filter(physical_unit=i.unit.physical_unit,intervention=i).delete()
  messages.success(request,f'{i.unit.serial_number}: servicio de {i.zone.name} finalizado ({i.duration_minutes} min). Destino indicado: {dest.name}.');return redirect('production_board')
 @login_required
 @require_POST
