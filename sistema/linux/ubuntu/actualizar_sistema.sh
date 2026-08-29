@@ -18,6 +18,8 @@ ENV_PATH="${APP_ROOT}/.env"
 CODE_BACKUP="${BACKUP_DIR}/codigo_previo.tar.gz"
 DB_BACKUP="${BACKUP_DIR}/inventario.sqlite3"
 ENV_BACKUP="${BACKUP_DIR}/.env"
+SYSTEMD_BACKUP="${BACKUP_DIR}/systemd"
+METADATA_FILE="${BACKUP_DIR}/backup_info.txt"
 UPDATE_STARTED=0
 DB_MAY_HAVE_CHANGED=0
 
@@ -53,7 +55,6 @@ rollback(){
   echo "[ERROR] La actualización falló (código $rc). Iniciando restauración automática..." >&2
   if [[ $UPDATE_STARTED -eq 1 && -f "$CODE_BACKUP" ]]; then
     info "Restaurando código anterior..."
-    # Eliminar solo código administrado, preservando datos persistentes.
     find "$APP_ROOT" -mindepth 1 -maxdepth 1 \
       ! -name '.venv' ! -name '.env' ! -name 'data' ! -name 'backups' \
       ! -name 'logs' ! -name 'certs' -exec rm -rf {} + 2>/dev/null || true
@@ -124,7 +125,6 @@ systemctl stop "$CADDY_SERVICE" 2>/dev/null || true
 systemctl stop "$APP_SERVICE" 2>/dev/null || true
 
 info "Creando copia de seguridad previa..."
-# Backup de código, excluyendo datos persistentes y entorno virtual.
 tar -czf "$CODE_BACKUP" -C "$APP_ROOT" \
   --exclude='./.venv' --exclude='./.env' --exclude='./data' --exclude='./backups' \
   --exclude='./logs' --exclude='./certs' --exclude='*/__pycache__' --exclude='*.pyc' .
@@ -137,7 +137,30 @@ if [[ -f "$DB_PATH" ]]; then
   fi
 fi
 [[ -f "$ENV_PATH" ]] && cp -a "$ENV_PATH" "$ENV_BACKUP"
-ok "Backup previo: $BACKUP_DIR"
+
+mkdir -p "$SYSTEMD_BACKUP"
+for unit in \
+  /etc/systemd/system/pulsia-inventario.service \
+  /etc/systemd/system/pulsia-inventario-caddy.service \
+  /etc/systemd/system/pulsia-inventario-storage-admin.service \
+  /etc/systemd/system/pulsia-inventario-continuous-backup.service; do
+  [[ -f "$unit" ]] && cp -a "$unit" "$SYSTEMD_BACKUP/"
+done
+
+cat > "$METADATA_FILE" <<EOF
+PULSIA_BACKUP_VERSION=1
+CREATED_AT=$(date --iso-8601=seconds)
+MODE=$MODE
+APP_ROOT=$APP_ROOT
+SOURCE_ROOT=$SOURCE_ROOT
+HOSTNAME=$(hostname)
+CODE_BACKUP=$(basename "$CODE_BACKUP")
+DB_BACKUP=$(basename "$DB_BACKUP")
+ENV_BACKUP=$(basename "$ENV_BACKUP")
+EOF
+
+ln -sfn "$BACKUP_DIR" "$BACKUP_ROOT/ultimo"
+ok "Backup completo previo: $BACKUP_DIR"
 
 UPDATE_STARTED=1
 
