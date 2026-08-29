@@ -2,6 +2,6 @@ PERMISSION_CHOICES=[('orders.view','Ver Pedidos'),('orders.manage','Gestionar Pe
 def user_has_permission(user,permission):
  if not getattr(user,'is_authenticated',False): return False
  if user.is_superuser: return True
- return user.pulsia_role_assignments.filter(role__active=True,role__permissions__contains=[permission]).exists()
+ return any(permission in (assignment.role.permissions or []) for assignment in user.pulsia_role_assignments.select_related('role').filter(role__active=True))
 def user_is_purchasing(user):
  return getattr(user,'is_authenticated',False) and (user.is_superuser or user.pulsia_role_assignments.filter(role__active=True,role__code='compras').exists())
