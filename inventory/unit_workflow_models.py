@@ -13,6 +13,10 @@ class UnitIntervention(models.Model):
  @property
  def duration_minutes(self):return round((self.duration_seconds or 0)/60,1)
  def __str__(self):return f'{self.unit.serial_number} · {self.zone.name} · {self.worker.get_username()}'
+class PhysicalUnitLocation(models.Model):
+ physical_unit=models.OneToOneField('PhysicalUnit',on_delete=models.CASCADE,related_name='production_location');unit=models.ForeignKey(OrderUnit,on_delete=models.PROTECT,related_name='location_states');zone=models.ForeignKey(ProductionZone,on_delete=models.PROTECT,related_name='physical_units_here');intervention=models.OneToOneField(UnitIntervention,on_delete=models.PROTECT,related_name='location_state');worker=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='physical_unit_locations');entered_at=models.DateTimeField(db_index=True);updated_at=models.DateTimeField(auto_now=True)
+ class Meta:ordering=('zone__position','entered_at','pk')
+ def __str__(self):return f'{self.physical_unit.serial_number} · {self.zone.name}'
 class UnitAlertOrigin(models.Model):
  alert=models.OneToOneField(ProcurementAlert,on_delete=models.CASCADE,related_name='origin_trace');intervention=models.ForeignKey(UnitIntervention,on_delete=models.PROTECT,related_name='alerts');origin_worker=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='unit_alerts_originated');origin_zone=models.ForeignKey(ProductionZone,on_delete=models.PROTECT,related_name='unit_alerts_originated');created_at=models.DateTimeField(auto_now_add=True)
 class ReservationInstallation(models.Model):
