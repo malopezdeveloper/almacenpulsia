@@ -7,7 +7,7 @@ class InventoryConfig(AppConfig):
  verbose_name="Inventario técnico"
 
  def ready(self):
-  from . import order_models
+  from . import order_models, responsibility_models
   from .db_utils import install_sqlite_pragmas
   install_sqlite_pragmas()
   blocked={"makemigrations","migrate","collectstatic","test","check","shell","createsuperuser"}
