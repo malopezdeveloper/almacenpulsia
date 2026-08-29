@@ -61,11 +61,13 @@ def serial_lookup(request):
 @login_required
 def my_open_interventions(request):
  if not _can_work(request.user):return _deny()
- now=timezone.now();rows=[]
- qs=UnitIntervention.objects.filter(worker=request.user,finished_at__isnull=True).select_related('unit','unit__physical_unit','unit__order','zone').order_by('created_at','pk')
+ now=timezone.now();today=timezone.localdate();rows=[]
+ qs=UnitIntervention.objects.filter(worker=request.user,created_at__date=today).select_related('unit','unit__physical_unit','unit__order','zone','destination_zone').order_by('created_at','pk')
  for i in qs:
-  u=i.unit;_fill_from_aiken(u);rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'started_at':timezone.localtime(i.created_at).strftime('%d/%m/%Y %H:%M:%S'),'elapsed_seconds':max(0,int((now-i.created_at).total_seconds())),'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/'})
- return JsonResponse({'results':rows})
+  u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()))
+  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/'})
+ zones=[{'id':z.pk,'name':z.name} for z in ProductionZone.objects.filter(is_active=True).order_by('position','name')]
+ return JsonResponse({'results':rows,'zones':zones})
 
 @login_required
 @require_POST
@@ -76,8 +78,7 @@ def update_unit_field(request,unit_pk):
  if _clean(getattr(unit,field,'')):return JsonResponse({'ok':False,'error':'El campo ya contiene información y no se modifica desde la Pizarra.'},status=409)
  if not value:return JsonResponse({'ok':False,'error':'Indica un valor.'},status=400)
  with transaction.atomic():
-  setattr(unit,field,value);unit.save(update_fields=[field])
-  physical=PhysicalUnit.objects.select_for_update().get(pk=unit.physical_unit_id)
+  setattr(unit,field,value);unit.save(update_fields=[field]);physical=PhysicalUnit.objects.select_for_update().get(pk=unit.physical_unit_id)
   if not _clean(getattr(physical,field,'')):setattr(physical,field,value);physical.save(update_fields=[field])
  return JsonResponse({'ok':True,'field':field,'value':value})
 
@@ -121,7 +122,7 @@ def finish_unit_intervention(request,intervention_pk):
  if not _can_work(request.user):return _deny()
  with transaction.atomic():
   i=get_object_or_404(UnitIntervention.objects.select_for_update().select_related('unit','unit__physical_unit','zone'),pk=intervention_pk,worker=request.user,finished_at__isnull=True);dest=get_object_or_404(ProductionZone,pk=request.POST.get('destination_zone'),is_active=True)
-  if dest.pk==i.zone_id:messages.error(request,'La zona de destino debe ser distinta de la zona en la que estás trabajando.');return redirect('unit_workbench',intervention_pk=i.pk)
+  if dest.pk==i.zone_id:messages.error(request,'La zona de destino debe ser distinta de la zona en la que estás trabajando.');return redirect('production_board')
   now=timezone.now();_close_intervention(i,now,dest);PhysicalUnitLocation.objects.filter(physical_unit=i.unit.physical_unit,intervention=i).delete()
  messages.success(request,f'{i.unit.serial_number}: servicio de {i.zone.name} finalizado ({i.duration_minutes} min). Destino indicado: {dest.name}.');return redirect('production_board')
 @login_required
