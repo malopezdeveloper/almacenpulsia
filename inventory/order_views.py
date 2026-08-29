@@ -39,7 +39,7 @@ def internal_table(request,kind):
  return render(request,'inventory/internal_table.html',{'kind':kind,'title':title,'objects':_rows(kind),'can_manage':_allowed(request.user,perm),'customers':Customer.objects.filter(active=True),'suppliers':Supplier.objects.filter(active=True),'orders':CustomerOrder.objects.order_by('-id'),'units':OrderUnit.objects.order_by('-id'),'component_types':ComponentType.objects.filter(active=True),'components':Component.objects.order_by('-id'),'inventory_records':InventoryRecord.objects.filter(status='available')[:1000]})
 @login_required
 def internal_detail(request,kind,pk):
- if kind=='pedidos': return render(request,'inventory/order_choice.html',{'order':get_object_or_404(CustomerOrder.objects.select_related('customer'),pk=pk)})
+ if kind=='pedidos': return redirect('order_detail',pk=pk)
  if kind=='unidades': return redirect('unit_detail',pk=pk)
  if kind not in TABLES or not _allowed(request.user,'orders.view'): return _deny()
  obj=get_object_or_404(TABLES[kind][0],pk=pk); related=[]
