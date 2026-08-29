@@ -6,7 +6,7 @@ class InventoryConfig(AppConfig):
  name="inventory"
  verbose_name="Inventario técnico"
  def ready(self):
-  from . import order_models,responsibility_models
+  from . import order_models,responsibility_models,component_flow_models
   original_save=order_models.OrderUnit.save
   def lifecycle_save(instance,*args,**kwargs):
    if not instance.physical_unit_id:
