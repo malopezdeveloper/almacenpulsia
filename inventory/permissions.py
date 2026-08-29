@@ -1,0 +1,7 @@
+PERMISSION_CHOICES=[('orders.view','Ver Pedidos'),('orders.manage','Gestionar Pedidos'),('customers.manage','Gestionar Clientes'),('suppliers.manage','Gestionar Proveedores'),('components.manage','Gestionar Componentes'),('repairs.manage','Gestionar Reparaciones'),('components.reserve','Reservar Componentes'),('rma.manage','Gestionar RMA'),('procurement.view','Ver alertas de Compras'),('procurement.resolve','Resolver alertas de Compras'),('roles.manage','Gestionar roles y permisos')]
+def user_has_permission(user,permission):
+ if not getattr(user,'is_authenticated',False): return False
+ if user.is_superuser: return True
+ return user.pulsia_role_assignments.filter(role__active=True,role__permissions__contains=[permission]).exists()
+def user_is_purchasing(user):
+ return getattr(user,'is_authenticated',False) and (user.is_superuser or user.pulsia_role_assignments.filter(role__active=True,role__code='compras').exists())
