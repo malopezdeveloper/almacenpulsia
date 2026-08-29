@@ -1,0 +1,22 @@
+{% extends 'inventory/base.html' %}
+{% block title %}Responsables · PULSIA{% endblock %}
+{% block content %}
+<div class="top"><div><h1>Responsables</h1><div class="muted">Solo el Gestor puede asignar estas responsabilidades. Cada responsabilidad admite una sola cuenta; una misma cuenta puede acumular varias.</div></div></div>
+<div class="card">
+  <h2>Responsabilidades administrativas</h2>
+  <p class="muted">Al recibir una responsabilidad la cuenta queda habilitada como Administrador. El Gestor mantiene siempre acceso y control total.</p>
+  {% for code,label,assignment in responsibilities %}
+  <form method="post" style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(220px,1fr) auto;gap:12px;align-items:end;border-bottom:1px solid #e5e7eb;padding:14px 0">
+    {% csrf_token %}
+    <input type="hidden" name="responsibility" value="{{code}}">
+    <div><b>{{label}}</b><div class="muted">Actual: {% if assignment %}{{assignment.user.username}}{% else %}Sin asignar{% endif %}</div></div>
+    <div><label>Cuenta responsable</label><select name="user"><option value="">— Sin asignar —</option>{% for u in users %}<option value="{{u.pk}}" {% if assignment and assignment.user_id == u.pk %}selected{% endif %}>{{u.username}}{% if u.is_superuser %} · Gestor{% elif u.is_staff %} · Administrador{% endif %}</option>{% endfor %}</select></div>
+    <button class="btn" type="submit">Aplicar</button>
+  </form>
+  {% endfor %}
+</div>
+<div class="card">
+  <h2>Historial de asignaciones</h2>
+  <div style="overflow:auto"><table><thead><tr><th>Fecha</th><th>Responsabilidad</th><th>Acción</th><th>Cuenta</th><th>Anterior</th><th>Gestor</th></tr></thead><tbody>{% for h in history %}<tr><td>{{h.created_at}}</td><td>{{h.get_responsibility_display}}</td><td>{{h.get_action_display}}</td><td>{{h.user.username}}</td><td>{% if h.previous_user %}{{h.previous_user.username}}{% else %}—{% endif %}</td><td>{{h.changed_by.username}}</td></tr>{% empty %}<tr><td colspan="6">Todavía no hay cambios registrados.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}
