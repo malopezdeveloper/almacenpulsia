@@ -13,6 +13,15 @@ def _allowed(u):return u.is_staff or user_has_permission(u,'orders.manage')
 def _deny():
  from django.http import HttpResponseForbidden
  return HttpResponseForbidden('No tienes permiso para modificar el pedido.')
+def _text(v):return ' '.join(str(v or '').strip().split())
+def _values(order,row,physical=None):
+ return {f:_text(row.get(f)) or _text(getattr(physical,f,'')) or _text(getattr(order,f,'')) for f in ('brand','model','processor','ram','disk')}
+def _fill(obj,values):
+ changed=[]
+ for f,v in values.items():
+  if not _text(getattr(obj,f,'')) and v:setattr(obj,f,v);changed.append(f)
+ if changed:obj.save(update_fields=changed)
+ return changed
 
 @login_required
 @require_POST
@@ -26,8 +35,15 @@ def set_order_status(request,pk,action):
  return redirect('order_detail',pk=pk)
 
 def _cycle(order,sn,row):
- physical,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults={'brand':str(row.get('brand') or order.brand),'model':str(row.get('model') or order.model),'processor':str(row.get('processor') or order.processor),'ram':str(row.get('ram') or order.ram),'disk':str(row.get('disk') or order.disk)})
- cycle,created=OrderUnit.objects.get_or_create(order=order,physical_unit=physical,defaults={'serial_number':sn,'aiken_lot':str(row.get('lot') or order.lot),'aiken_unit_id':str(row.get('id') or ''),'brand':str(row.get('brand') or physical.brand or order.brand),'model':str(row.get('model') or physical.model or order.model),'processor':str(row.get('processor') or physical.processor or order.processor),'ram':str(row.get('ram') or physical.ram or order.ram),'disk':str(row.get('disk') or physical.disk or order.disk)})
+ initial=_values(order,row)
+ physical,physical_created=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=initial)
+ values=_values(order,row,physical)
+ if not physical_created:_fill(physical,values)
+ cycle,created=OrderUnit.objects.get_or_create(order=order,physical_unit=physical,defaults={'serial_number':sn,'aiken_lot':_text(row.get('lot')) or _text(order.lot),**values})
+ if not created:
+  _fill(cycle,values)
+  if not _text(cycle.aiken_lot) and (_text(row.get('lot')) or _text(order.lot)):
+   cycle.aiken_lot=_text(row.get('lot')) or _text(order.lot);cycle.save(update_fields=['aiken_lot'])
  return created
 
 @login_required
@@ -46,8 +62,8 @@ def aiken_import_cycle(request,order_pk):
   created=0
   with transaction.atomic():
    for row in rows:
-    sn=str(row.get('serial_number') or '').strip()
+    sn=_text(row.get('serial_number'))
     if sn and _cycle(order,sn,row):created+=1
-  messages.success(request,f'AIKEN: {created} ciclo(s) incorporado(s). Un SN histórico puede volver en un pedido posterior.')
+  messages.success(request,f'AIKEN: {created} ciclo(s) nuevos. Los ciclos ya existentes también completan sus campos técnicos vacíos cuando AIKEN dispone del dato.')
  except Exception as exc:messages.error(request,f'No se pudo importar desde AIKEN: {exc}')
  return redirect('order_detail',pk=order.pk)
