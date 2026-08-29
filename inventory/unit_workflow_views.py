@@ -32,6 +32,15 @@ def serial_lookup(request):
   except Exception as exc:return JsonResponse({'status':'aiken_error','serial_number':sn,'message':str(exc),'manual_confirmation_required':True})
  return JsonResponse({'status':'not_found','serial_number':sn,'manual_confirmation_required':True})
 @login_required
+def my_open_interventions(request):
+ if not _can_work(request.user):return _deny()
+ now=timezone.now()
+ rows=[]
+ qs=UnitIntervention.objects.filter(worker=request.user,finished_at__isnull=True).select_related('unit','unit__order','zone').order_by('created_at','pk')
+ for i in qs:
+  rows.append({'id':i.pk,'serial_number':i.unit.serial_number,'order':i.unit.order.name if i.unit.order_id else 'STOCK','zone':i.zone.name,'zone_id':i.zone_id,'started_at':timezone.localtime(i.created_at).strftime('%d/%m/%Y %H:%M:%S'),'elapsed_seconds':max(0,int((now-i.created_at).total_seconds())),'url':f'/produccion/intervencion/{i.pk}/'})
+ return JsonResponse({'results':rows})
+@login_required
 @require_POST
 def start_unit_intervention(request):
  if not _can_work(request.user):return _deny()
@@ -56,13 +65,16 @@ def start_unit_intervention(request):
 def unit_workbench(request,intervention_pk):
  i=get_object_or_404(UnitIntervention.objects.select_related('unit','unit__order','unit__order__customer','worker','zone','destination_zone'),pk=intervention_pk)
  if not _can_work(request.user):return _deny()
- u=i.unit;return render(request,'inventory/unit_workbench.html',{'intervention':i,'unit':u,'zones':ProductionZone.objects.filter(is_active=True).order_by('position','name'),'alerts':u.procurement_alerts.select_related('component_type').order_by('-created_at'),'reservations':u.component_reservations.select_related('component','technician','installed_by','repair').order_by('-reserved_at'),'component_types':ComponentType.objects.filter(active=True).order_by('name'),'can_confirm':_can_confirm(request.user)})
+ u=i.unit;return render(request,'inventory/unit_workbench.html',{'intervention':i,'unit':u,'zones':ProductionZone.objects.filter(is_active=True).exclude(pk=i.zone_id).order_by('position','name'),'alerts':u.procurement_alerts.select_related('component_type').order_by('-created_at'),'reservations':u.component_reservations.select_related('component','technician','installed_by','repair').order_by('-reserved_at'),'component_types':ComponentType.objects.filter(active=True).order_by('name'),'can_confirm':_can_confirm(request.user)})
 @login_required
 @require_POST
 def finish_unit_intervention(request,intervention_pk):
  if not _can_work(request.user):return _deny()
  with transaction.atomic():
-  i=get_object_or_404(UnitIntervention.objects.select_for_update().select_related('unit','zone'),pk=intervention_pk,worker=request.user,finished_at__isnull=True);dest=get_object_or_404(ProductionZone,pk=request.POST.get('destination_zone'),is_active=True);now=timezone.now();i.destination_zone=dest;i.finished_at=now;i.duration_seconds=max(0,int((now-i.created_at).total_seconds()));i.save(update_fields=['destination_zone','finished_at','duration_seconds'])
+  i=get_object_or_404(UnitIntervention.objects.select_for_update().select_related('unit','zone'),pk=intervention_pk,worker=request.user,finished_at__isnull=True);dest=get_object_or_404(ProductionZone,pk=request.POST.get('destination_zone'),is_active=True)
+  if dest.pk==i.zone_id:
+   messages.error(request,'La zona de destino debe ser distinta de la zona en la que estás trabajando.');return redirect('unit_workbench',intervention_pk=i.pk)
+  now=timezone.now();i.destination_zone=dest;i.finished_at=now;i.duration_seconds=max(0,int((now-i.created_at).total_seconds()));i.save(update_fields=['destination_zone','finished_at','duration_seconds'])
  messages.success(request,f'{i.unit.serial_number} terminada: {i.zone.name} → {dest.name}. Tiempo invertido: {i.duration_minutes} min.');return redirect('production_board')
 @login_required
 @require_POST
