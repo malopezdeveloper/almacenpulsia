@@ -7,7 +7,17 @@ class InventoryConfig(AppConfig):
  verbose_name="Inventario técnico"
 
  def ready(self):
-  from . import order_models, responsibility_models
+  from . import order_models,responsibility_models
+  # Compatibilidad: las vistas existentes pueden crear OrderUnit usando SN. El modelo
+  # resuelve ese SN a la identidad física antes de guardar el nuevo ciclo de pedido.
+  original_save=order_models.OrderUnit.save
+  def lifecycle_save(instance,*args,**kwargs):
+   if not instance.physical_unit_id:
+    defaults={'brand':instance.brand,'model':instance.model,'processor':instance.processor,'ram':instance.ram,'disk':instance.disk}
+    physical,_=order_models.PhysicalUnit.objects.get_or_create(serial_number=instance.serial_number,defaults=defaults)
+    instance.physical_unit=physical
+   return original_save(instance,*args,**kwargs)
+  order_models.OrderUnit.save=lifecycle_save
   from .db_utils import install_sqlite_pragmas
   install_sqlite_pragmas()
   blocked={"makemigrations","migrate","collectstatic","test","check","shell","createsuperuser"}
