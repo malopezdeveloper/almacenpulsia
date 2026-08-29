@@ -162,6 +162,11 @@ class RMA(models.Model):
     observations=models.TextField(blank=True)
     def clean(self):
         from django.core.exceptions import ValidationError
+        if self.origin=='warehouse' and not self.reservation_id and self.component_id:
+            reservation=self.component.reservations.filter(status='installed').select_related('unit').order_by('-installed_at','-pk').first()
+            if reservation:
+                self.reservation=reservation
+                self.unit=reservation.unit
         if self.component_id and self.component.status!='low': raise ValidationError('El componente debe estar dado de baja antes de abrir el RMA.')
-        if self.origin=='warehouse' and not self.reservation_id: raise ValidationError('Una baja procedente de almacén debe vincularse a su reserva.')
+        if self.origin=='warehouse' and not self.reservation_id: raise ValidationError('Una baja procedente de almacén debe vincularse a su reserva instalada.')
         if self.component_id and self.component.supplier_id and self.supplier_id and self.supplier_id!=self.component.supplier_id: raise ValidationError('El RMA debe dirigirse al proveedor del componente.')
