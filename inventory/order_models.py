@@ -70,3 +70,9 @@ class RMA(models.Model):
 class SavedQuery(models.Model):
     name=models.CharField(max_length=180,unique=True); description=models.TextField(blank=True); sql=models.TextField(); active=models.BooleanField(default=True,db_index=True); is_system=models.BooleanField(default=False,db_index=True); original_sql=models.TextField(blank=True); created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='saved_queries_created'); created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
     def __str__(self): return self.name
+
+class DevelopmentBatch(models.Model):
+    STATUS=[('active','Activo'),('reverted','Revertido'),('purged','Eliminado por vaciado')]
+    token=models.CharField(max_length=32,unique=True,db_index=True); source=models.CharField(max_length=255,blank=True); status=models.CharField(max_length=12,choices=STATUS,default='active',db_index=True); manifest=models.JSONField(default=dict,blank=True); created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='development_batches_created'); created_at=models.DateTimeField(auto_now_add=True,db_index=True); reverted_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,null=True,blank=True,related_name='development_batches_reverted'); reverted_at=models.DateTimeField(null=True,blank=True)
+    class Meta: ordering=('-created_at','-pk')
+    def __str__(self): return self.token
