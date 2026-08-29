@@ -1,6 +1,5 @@
-{% extends 'inventory/base.html' %}{% block title %}Tablas internas · PULSIA{% endblock %}{% block content %}
-<div class="top"><div><h1>Tablas internas</h1><div class="muted">Seleccione un concepto para consultar y gestionar sus registros.</div></div></div>
+{% extends 'inventory/base.html' %}{% block title %}Menú pedidos · PULSIA{% endblock %}{% block content %}
+<div class="top"><div><h1>Menú pedidos</h1><div class="muted">Pedidos, clientes, proveedores, unidades, reparaciones, componentes, reservas y RMA.</div></div></div>
 {% if alerts %}<div class="card" style="border:3px solid #ff0019;box-shadow:0 0 24px #ff001955"><h2 style="color:#d40013">⚠ ALERTAS DE COMPRAS</h2>{% for a in alerts %}<div style="padding:10px;background:#fff0f1;margin:8px 0"><b>{{a.message}}</b><form method="post" action="{% url 'procurement_resolve' a.pk %}" style="display:inline">{% csrf_token %}<button class="btn small">Resolver</button></form></div>{% endfor %}</div>{% endif %}
-<div class="card"><div style="display:flex;flex-wrap:wrap;gap:10px">{% for key,label in concepts %}<a class="btn" href="{% url 'internal_table' key %}">{{label}}</a>{% endfor %}</div></div>
-<div class="card"><h2>Funcionamiento</h2><p>Dentro de cada concepto encontrará exclusivamente sus registros. Las tablas permiten búsqueda, filtros por columna, ordenación y desplazamiento horizontal. Al seleccionar una fila se abre su ficha y las relaciones correspondientes.</p></div>
+<div class="card"><h2>Submenú</h2><div style="display:flex;flex-wrap:wrap;gap:10px">{% for key,label in concepts %}<a class="btn" href="{% url 'internal_table' key %}">{{label}}</a>{% endfor %}</div></div>
 {% endblock %}
