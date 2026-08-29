@@ -33,11 +33,18 @@ def _authorization_usage(auth):
     return auth.allocations.filter(reservation__status__in=['active', 'installed']).count()
 
 
+def _require_open(unit):
+    return unit.order.status == 'open'
+
+
 @login_required
 def reservation_source(request, unit_pk):
     if not _can_reserve(request.user):
         return _deny()
     unit = get_object_or_404(OrderUnit.objects.select_related('order', 'order__customer'), pk=unit_pk)
+    if not _require_open(unit):
+        messages.error(request, 'El pedido está cerrado. Reábrelo antes de reservar componentes.')
+        return redirect('unit_detail', pk=unit.pk)
     return render(request, 'inventory/reservation_source.html', {'unit': unit})
 
 
@@ -46,6 +53,8 @@ def warehouse_components(request, unit_pk):
     if not _can_reserve(request.user):
         return _deny()
     unit = get_object_or_404(OrderUnit.objects.select_related('order', 'order__customer'), pk=unit_pk)
+    if not _require_open(unit):
+        return redirect('unit_detail', pk=unit.pk)
     qs = Component.objects.filter(status='active').select_related('component_kind', 'supplier').order_by('component_type', 'reference', 'pk')
     q = (request.GET.get('q') or '').strip()
     if q:
@@ -59,7 +68,16 @@ def order_components(request, unit_pk):
     if not _can_reserve(request.user):
         return _deny()
     unit = get_object_or_404(OrderUnit.objects.select_related('order', 'order__customer'), pk=unit_pk)
+    if not _require_open(unit):
+        return redirect('unit_detail', pk=unit.pk)
     order = unit.order
+    if _is_stock_order(order):
+        for component_type in ComponentType.objects.filter(active=True):
+            auth, _ = OrderComponentAuthorization.objects.get_or_create(order=order, component_type=component_type)
+            if not auth.unlimited:
+                auth.unlimited = True
+                auth.updated_by = request.user
+                auth.save(update_fields=['unlimited', 'updated_by', 'updated_at'])
     authorizations = list(OrderComponentAuthorization.objects.filter(order=order).select_related('component_type').order_by('component_type__name'))
     rows = []
     for auth in authorizations:
@@ -83,6 +101,8 @@ def authorized_physical_components(request, unit_pk, auth_pk):
     if not _can_reserve(request.user):
         return _deny()
     unit = get_object_or_404(OrderUnit.objects.select_related('order'), pk=unit_pk)
+    if not _require_open(unit):
+        return redirect('unit_detail', pk=unit.pk)
     auth = get_object_or_404(OrderComponentAuthorization.objects.select_related('component_type'), pk=auth_pk, order=unit.order)
     used = _authorization_usage(auth)
     if not auth.unlimited and used >= auth.approved_quantity:
@@ -105,9 +125,15 @@ def reserve_physical_component(request, unit_pk, component_pk, source):
         return _deny()
     with transaction.atomic():
         unit = get_object_or_404(OrderUnit.objects.select_related('order'), pk=unit_pk)
+        if not _require_open(unit):
+            messages.error(request, 'El pedido está cerrado.')
+            return redirect('unit_detail', pk=unit.pk)
         component = get_object_or_404(Component.objects.select_for_update().select_related('component_kind'), pk=component_pk, status='active')
         authorization = None
         if source == 'order':
+            if component.component_kind_id is None:
+                messages.error(request, 'Este componente no tiene un tipo normalizado y no puede consumir cupo de pedido. Puede reservarse desde Bodega.')
+                return redirect('order_components', unit_pk=unit.pk)
             authorization = get_object_or_404(OrderComponentAuthorization.objects.select_for_update(), order=unit.order, component_type=component.component_kind)
             used = _authorization_usage(authorization)
             if not authorization.unlimited and used >= authorization.approved_quantity:
@@ -129,15 +155,40 @@ def reserve_physical_component(request, unit_pk, component_pk, source):
 
 @login_required
 @require_POST
+def legacy_reserve_component(request, component_pk):
+    if not _can_reserve(request.user):
+        return _deny()
+    unit_id = request.POST.get('unit')
+    if not unit_id:
+        messages.error(request, 'Selecciona primero una unidad para reservar el componente.')
+        return redirect('internal_table', kind='componentes')
+    unit = get_object_or_404(OrderUnit, pk=unit_id)
+    messages.info(request, 'La reserva directa antigua ha sido sustituida por la selección Bodega / Componentes del pedido.')
+    return redirect('reservation_source', unit_pk=unit.pk)
+
+
+@login_required
+@require_POST
 def request_component_increase(request, unit_pk):
     if not _can_reserve(request.user):
         return _deny()
     unit = get_object_or_404(OrderUnit.objects.select_related('order'), pk=unit_pk)
+    if not _require_open(unit):
+        messages.error(request, 'El pedido está cerrado.')
+        return redirect('unit_detail', pk=unit.pk)
     component_type = get_object_or_404(ComponentType, pk=request.POST.get('component_type'), active=True)
     try:
         qty = max(int(request.POST.get('quantity') or 1), 1)
     except ValueError:
         qty = 1
+    if _is_stock_order(unit.order):
+        auth, _ = OrderComponentAuthorization.objects.get_or_create(order=unit.order, component_type=component_type)
+        if not auth.unlimited:
+            auth.unlimited = True
+            auth.updated_by = request.user
+            auth.save(update_fields=['unlimited', 'updated_by', 'updated_at'])
+        messages.info(request, 'STOCK no necesita ampliación de cupo. Selecciona una pieza física disponible.')
+        return redirect('order_components', unit_pk=unit.pk)
     ComponentIncreaseRequest.objects.create(
         order=unit.order,
         unit=unit,
