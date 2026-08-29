@@ -1,0 +1,7 @@
+# Los scripts de Linux deben conservar finales de línea Unix incluso si el repositorio se maneja desde Windows.
+*.sh text eol=lf
+
+# Mantener scripts específicos de Windows con CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
