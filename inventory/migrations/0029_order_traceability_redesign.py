@@ -3,11 +3,31 @@ from django.db import migrations, models
 import django.db.models.deletion
 
 
-def seed_component_types(apps,schema_editor):
+def backfill_traceability(apps,schema_editor):
     Component=apps.get_model('inventory','Component')
     ComponentType=apps.get_model('inventory','ComponentType')
-    for name in Component.objects.exclude(component_type='').values_list('component_type',flat=True).distinct():
-        ComponentType.objects.get_or_create(name=name)
+    Repair=apps.get_model('inventory','Repair')
+    Reservation=apps.get_model('inventory','ComponentReservation')
+    for component in Component.objects.all().iterator():
+        name=(component.component_type or '').strip()
+        if name:
+            kind,_=ComponentType.objects.get_or_create(name=name)
+            component.component_kind_id=kind.pk
+            component.save(update_fields=['component_kind'])
+    for repair in Repair.objects.all().iterator():
+        name=(repair.repair_type or '').strip()
+        if name:
+            kind,_=ComponentType.objects.get_or_create(name=name)
+            repair.component_type_id=kind.pk
+            repair.save(update_fields=['component_type'])
+    for reservation in Reservation.objects.select_related('repair').all().iterator():
+        if reservation.repair_id:
+            reservation.unit_id=reservation.repair.unit_id
+            if reservation.status=='delivered':
+                reservation.status='installed'
+                reservation.installed_by_id=reservation.technician_id
+                reservation.installed_at=reservation.resolved_at or reservation.reserved_at
+            reservation.save(update_fields=['unit','status','installed_by','installed_at'])
 
 
 class Migration(migrations.Migration):
@@ -28,12 +48,12 @@ class Migration(migrations.Migration):
         migrations.AddField(model_name='componentreservation',name='installed_by',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='component_installations',to=settings.AUTH_USER_MODEL)),
         migrations.AddField(model_name='componentreservation',name='installed_at',field=models.DateTimeField(blank=True,null=True)),
         migrations.AlterField(model_name='componentreservation',name='status',field=models.CharField(choices=[('active','Reservado'),('installed','Reservado e instalado'),('cancelled','Cancelada')],db_index=True,default='active',max_length=16)),
-        migrations.AddConstraint(model_name='componentreservation',constraint=models.UniqueConstraint(condition=models.Q(('status__in',['active','installed'])),fields=('component',),name='one_active_component_reservation')),
+        migrations.AddConstraint(model_name='componentreservation',constraint=models.UniqueConstraint(condition=models.Q(status__in=['active','installed']),fields=('component',),name='one_active_component_reservation')),
         migrations.AlterField(model_name='rma',name='component',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='rmas',to='inventory.component')),
         migrations.AlterField(model_name='rma',name='supplier',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='rmas',to='inventory.supplier')),
         migrations.AddField(model_name='rma',name='component_type',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='rmas',to='inventory.componenttype')),
         migrations.AddField(model_name='rma',name='unit',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='rmas',to='inventory.orderunit')),
         migrations.AddField(model_name='rma',name='reservation',field=models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.PROTECT,related_name='rmas',to='inventory.componentreservation')),
         migrations.AddField(model_name='rma',name='origin',field=models.CharField(choices=[('supplier','Proveedor'),('original','Original de la unidad'),('warehouse','Reserva de almacén')],db_index=True,default='supplier',max_length=16)),
-        migrations.RunPython(seed_component_types,migrations.RunPython.noop),
+        migrations.RunPython(backfill_traceability,migrations.RunPython.noop),
     ]
