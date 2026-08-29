@@ -4,4 +4,10 @@ def user_has_permission(user,permission):
  if user.is_superuser: return True
  return any(permission in (assignment.role.permissions or []) for assignment in user.pulsia_role_assignments.select_related('role').filter(role__active=True))
 def user_is_purchasing(user):
- return getattr(user,'is_authenticated',False) and (user.is_superuser or user.pulsia_role_assignments.filter(role__active=True,role__code='compras').exists())
+ if not getattr(user,'is_authenticated',False): return False
+ if user.is_superuser: return True
+ try:
+  if user.area_responsibilities.filter(responsibility='purchasing').exists(): return True
+ except Exception:
+  pass
+ return user.pulsia_role_assignments.filter(role__active=True,role__code='compras').exists()
