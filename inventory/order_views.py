@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth import get_user_model
 from django.db import transaction, connection
-from django.db.models import Q
+from django.db.models import Q,Count
 from django.http import HttpResponseForbidden, JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -20,7 +20,7 @@ def _deny(): return HttpResponseForbidden('No tienes permiso para realizar esta 
 def _back(k): return redirect('internal_table',kind=k)
 TABLES={'pedidos':(CustomerOrder,'Pedidos','orders.manage'),'clientes':(Customer,'Clientes','customers.manage'),'proveedores':(Supplier,'Proveedores','suppliers.manage'),'unidades':(OrderUnit,'Unidades','orders.manage'),'reparaciones':(Repair,'Reparaciones','repairs.manage'),'componentes':(Component,'Componentes','components.manage'),'reservas':(ComponentReservation,'Reservas de componentes','components.reserve'),'rma':(RMA,'RMA','rma.manage')}
 def _rows(k):
- if k=='pedidos': return CustomerOrder.objects.select_related('customer').order_by('-id')
+ if k=='pedidos': return CustomerOrder.objects.select_related('customer').annotate(unit_count=Count('units')).order_by('-id')
  if k=='clientes': return Customer.objects.order_by('name')
  if k=='proveedores': return Supplier.objects.order_by('name')
  if k=='unidades': return OrderUnit.objects.select_related('order','order__customer').order_by('-id')
@@ -51,8 +51,11 @@ def internal_detail(request,kind,pk):
 @login_required
 def order_detail(request,pk):
  if not _allowed(request.user,'orders.view'): return _deny()
- o=get_object_or_404(CustomerOrder.objects.select_related('customer'),pk=pk); units=o.units.all().order_by('serial_number'); rs=ComponentReservation.objects.filter(unit__order=o).select_related('component'); installed=rs.filter(status='installed'); cost=sum((x.component.price or Decimal('0')) for x in installed)
- return render(request,'inventory/order_detail.html',{'order':o,'units':units,'reservations':rs,'installed_count':installed.count(),'component_cost':cost,'can_manage':_allowed(request.user,'orders.manage')})
+ o=get_object_or_404(CustomerOrder.objects.select_related('customer'),pk=pk); units=o.units.all().order_by('serial_number'); rs=ComponentReservation.objects.filter(unit__order=o).select_related('component'); installed=rs.filter(status='installed'); cost=sum((x.component.price or Decimal('0')) for x in installed); source=_aiken_source(); aiken_ready=False; aiken_error=''
+ if source:
+  try: test_source(source); aiken_ready=True
+  except Exception as exc: aiken_error=str(exc)
+ return render(request,'inventory/order_detail.html',{'order':o,'units':units,'reservations':rs,'installed_count':installed.count(),'component_cost':cost,'can_manage':_allowed(request.user,'orders.manage'),'aiken_ready':aiken_ready,'aiken_error':aiken_error})
 @login_required
 def unit_detail(request,pk):
  if not _allowed(request.user,'orders.view'): return _deny()
@@ -94,7 +97,7 @@ def reserve_component(request,component_pk):
  if not _allowed(request.user,'components.reserve') or request.method!='POST': return _deny()
  with transaction.atomic():
   c=get_object_or_404(Component.objects.select_for_update(),pk=component_pk,status='active'); u=get_object_or_404(OrderUnit,pk=request.POST['unit']); ComponentReservation.objects.create(unit=u,component=c,technician=request.user,unit_serial_number=u.serial_number,observations=request.POST.get('observations','')); c.status='reserved'; c.save(update_fields=['status'])
- return redirect(request.POST.get('next') or 'unit_detail',pk=u.pk) if not request.POST.get('next') else redirect(request.POST['next'])
+ return redirect('unit_detail',pk=u.pk)
 @login_required
 def reservation_install(request,pk):
  r=get_object_or_404(ComponentReservation,pk=pk)
@@ -136,41 +139,56 @@ def component_types_manager(request):
 def aiken_settings(request):
  s=ProductionModelMySQLSource.objects.order_by('-updated_at').first()
  if request.method=='POST':
+  candidate=ProductionModelMySQLSource(host=request.POST['host'].strip(),port=int(request.POST.get('port') or 3306),database=request.POST['database'].strip(),username=request.POST['username'].strip(),updated_by=request.user)
+  password=request.POST.get('password','')
+  if password: candidate.encrypted_password=encrypt_password(password)
+  elif s: candidate.encrypted_password=s.encrypted_password
+  try:
+   test_source(candidate)
+  except Exception as e:
+   messages.error(request,f'CONEXIÓN AIKEN FALLIDA. No se ha guardado ningún cambio. Error: {e}')
+   return render(request,'inventory/aiken_settings.html',{'source':candidate,'connection_status':'error','connection_message':f'No se pudo conectar con {candidate.host}:{candidate.port}/{candidate.database}. {e}'})
+  if request.POST.get('action')=='test':
+   messages.success(request,f'CONEXIÓN AIKEN CORRECTA. Servidor {candidate.host}:{candidate.port}, base {candidate.database}, usuario {candidate.username}. No se modificó la configuración guardada.')
+   return render(request,'inventory/aiken_settings.html',{'source':candidate,'connection_status':'ok','connection_message':'Conexión comprobada correctamente. AIKEN responde y la tabla Units es accesible.'})
   if s is None: s=ProductionModelMySQLSource()
-  s.host=request.POST['host'].strip(); s.port=int(request.POST.get('port') or 3306); s.database=request.POST['database'].strip(); s.username=request.POST['username'].strip(); s.updated_by=request.user
-  if request.POST.get('password'): s.encrypted_password=encrypt_password(request.POST['password'])
-  try: test_source(s)
-  except Exception as e: messages.error(request,f'No se pudo conectar con AIKEN: {e}')
-  else: s.save(); messages.success(request,'Conexión AIKEN guardada.'); return redirect('aiken_settings')
- return render(request,'inventory/aiken_settings.html',{'source':s})
+  s.host=candidate.host; s.port=candidate.port; s.database=candidate.database; s.username=candidate.username; s.encrypted_password=candidate.encrypted_password; s.updated_by=request.user; s.save()
+  messages.success(request,f'CONEXIÓN AIKEN CORRECTA Y GUARDADA. {s.host}:{s.port} / {s.database} / usuario {s.username}.')
+  return redirect('aiken_settings')
+ status=''; msg=''
+ if s:
+  try: test_source(s); status='ok'; msg=f'Configuración activa comprobada: conexión correcta con {s.host}:{s.port}/{s.database}.'
+  except Exception as e: status='error'; msg=f'La configuración guardada no conecta actualmente: {e}'
+ return render(request,'inventory/aiken_settings.html',{'source':s,'connection_status':status,'connection_message':msg})
 def _aiken_source(): return ProductionModelMySQLSource.objects.order_by('-updated_at').first()
 @login_required
 def aiken_sn_search(request):
  s=_aiken_source(); q=request.GET.get('q','').strip()
  if not s or not _allowed(request.user,'orders.manage'): return JsonResponse({'results':[]},status=400)
- try: return JsonResponse({'results':search_aiken_units(s,serial_query=q,limit=50) if q else []})
+ try: return JsonResponse({'results':search_aiken_units(s,serial_query=q,limit=100) if q else []})
  except Exception as e: return JsonResponse({'error':str(e),'results':[]},status=400)
 @login_required
 def aiken_lot_search(request):
  s=_aiken_source()
  if not s or not _allowed(request.user,'orders.manage'): return JsonResponse({'results':[]},status=400)
- try: return JsonResponse({'results':list_aiken_lots(s,request.GET.get('q','').strip(),100)})
+ try: return JsonResponse({'results':list_aiken_lots(s,request.GET.get('q','').strip(),500)})
  except Exception as e: return JsonResponse({'error':str(e),'results':[]},status=400)
 @login_required
 def aiken_import(request,order_pk):
  if not _allowed(request.user,'orders.manage') or request.method!='POST': return _deny()
  o=get_object_or_404(CustomerOrder,pk=order_pk); s=_aiken_source(); rows=[]
- if not s: messages.error(request,'Configure AIKEN.'); return redirect('order_detail',pk=o.pk)
+ if not s: messages.error(request,'AIKEN no está configurado.'); return redirect('order_detail',pk=o.pk)
  try:
+  test_source(s)
   if request.POST.get('mode')=='lot': rows=search_aiken_units(s,lot=request.POST.get('lot',''),limit=5000)
   else:
    for sn in request.POST.getlist('serial'): rows.extend(search_aiken_units(s,serial_query=sn.strip(),limit=20))
- except Exception as e: messages.error(request,str(e)); return redirect('order_detail',pk=o.pk)
+ except Exception as e: messages.error(request,f'No se pudo importar desde AIKEN: {e}'); return redirect('order_detail',pk=o.pk)
  created=0
  for row in rows:
   sn=str(row.get('serial_number') or '').strip()
   if sn and not OrderUnit.objects.filter(serial_number=sn).exists(): OrderUnit.objects.create(order=o,serial_number=sn,aiken_lot=str(row.get('lot') or o.lot),aiken_unit_id=str(row.get('id') or ''),brand=str(row.get('brand') or o.brand),model=str(row.get('model') or o.model),processor=str(row.get('processor') or o.processor),ram=str(row.get('ram') or o.ram),disk=str(row.get('disk') or o.disk)); created+=1
- messages.success(request,f'{created} unidad(es) importadas.'); return redirect('order_detail',pk=o.pk)
+ messages.success(request,f'Importación AIKEN completada: {created} unidad(es) añadidas al pedido.'); return redirect('order_detail',pk=o.pk)
 
 def _report_data(scope,pk):
  User=get_user_model()
@@ -190,7 +208,6 @@ def report_view(request,scope,pk):
   for r in rs: ws.append([r.unit_serial_number,r.repair.repair_type if r.repair else '',r.component.component_type,r.component.reference,float(r.component.price or 0),r.technician.username,str(r.reserved_at),r.installed_by.username if r.installed_by else '',str(r.installed_at or ''),r.get_status_display()])
   ws.append([]); ws.append(['TOTAL INVERTIDO','','','',float(cost)]); out=io.BytesIO(); wb.save(out); resp=HttpResponse(out.getvalue(),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); resp['Content-Disposition']=f'attachment; filename="{slugify(title)}.xlsx"'; return resp
  return render(request,'inventory/trace_report.html',{'title':title,'scope':scope,'subject':subject,'units':units,'reservations':rs,'repairs':repairs,'component_cost':cost})
-
 def _safe_sql(sql):
  s=re.sub(r'/\*.*?\*/',' ',sql,flags=re.S); s=re.sub(r'--.*?$',' ',s,flags=re.M).strip().rstrip(';').strip()
  return bool(re.match(r'^(select|with)\b',s,re.I)) and ';' not in s and not re.search(r'\b(insert|update|delete|drop|alter|create|replace|truncate|attach|detach|pragma|vacuum|grant|revoke|call|execute)\b',s,re.I)
