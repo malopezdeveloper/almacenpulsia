@@ -31,10 +31,8 @@ class OrderUnit(models.Model):
   if not self.physical_unit_id:
    sn=(self.serial_number or '').strip()
    if not sn:raise ValueError('La unidad necesita un número de serie.')
-   defaults={'brand':self.brand,'model':self.model,'processor':self.processor,'ram':self.ram,'disk':self.disk}
-   self.physical_unit,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=defaults)
-  self.serial_number=self.physical_unit.serial_number
-  return super().save(*a,**k)
+   defaults={'brand':self.brand,'model':self.model,'processor':self.processor,'ram':self.ram,'disk':self.disk};self.physical_unit,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=defaults)
+  self.serial_number=self.physical_unit.serial_number;return super().save(*a,**k)
  def __str__(self):return self.serial_number
 class OrderStatusEvent(models.Model):
  ACTIONS=[('closed','Cerrado'),('reopened','Reabierto')];order=models.ForeignKey(CustomerOrder,on_delete=models.CASCADE,related_name='status_events');action=models.CharField(max_length=12,choices=ACTIONS);user=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='order_status_events');created_at=models.DateTimeField(auto_now_add=True)
@@ -58,11 +56,31 @@ class ComponentReservation(models.Model):
   return super().save(*a,**k)
  def cancel(self):
   if self.status!='active':return
-  with transaction.atomic():self.status='cancelled';self.resolved_at=timezone.now();self.save(update_fields=['status','resolved_at']);self.component.status='active';self.component.save(update_fields=['status'])
+  from .models import RecordMovement
+  with transaction.atomic():
+   self.status='cancelled';self.resolved_at=timezone.now();self.save(update_fields=['status','resolved_at']);self.component.status='active';self.component.save(update_fields=['status'])
+   record=self.component.inventory_record
+   if record:
+    record.status='available';record.current_sn='';record.current_technician='';data=dict(record.data or {})
+    for field in record.table.inventory_fields.all():
+     key=field.key.casefold();name=field.name.casefold()
+     if field.is_destination_sn or field.is_technician or field.field_type=='date' or 'fecha' in key or 'fecha' in name or 'tecnic' in key or 'tecnic' in name or key=='sn':data[field.key]=''
+    record.data=data;record.save(update_fields=['status','current_sn','current_technician','data','updated_at']);RecordMovement.objects.create(record=record,movement_type='return',reason=f'Reserva cancelada para {self.unit_serial_number}; componente devuelto a disponible.',registered_by=self.technician)
  def install(self,user):
   if self.status!='active':return self.repair
+  from .models import RecordMovement
   with transaction.atomic():
-   repair=Repair.objects.create(unit=self.unit,repair_type=self.component.component_type,component_type=self.component.component_kind,created_by=user,observations=self.observations);self.repair=repair;self.installed_by=user;self.installed_at=timezone.now();self.status='installed';self.save(update_fields=['repair','installed_by','installed_at','status']);self.component.status='installed';self.component.save(update_fields=['status']);return repair
+   repair=Repair.objects.create(unit=self.unit,repair_type=self.component.component_type,component_type=self.component.component_kind,created_by=user,observations=self.observations);self.repair=repair;self.installed_by=user;self.installed_at=timezone.now();self.status='installed';self.save(update_fields=['repair','installed_by','installed_at','status']);self.component.status='installed';self.component.save(update_fields=['status'])
+   record=self.component.inventory_record
+   if record:
+    record.status='assigned';record.current_sn=self.unit_serial_number;record.current_technician=user.get_username();data=dict(record.data or {})
+    for field in record.table.inventory_fields.all():
+     key=field.key.casefold();name=field.name.casefold()
+     if field.is_destination_sn or key=='sn':data[field.key]=self.unit_serial_number
+     if field.is_technician or 'tecnic' in key or 'tecnic' in name:data[field.key]=user.get_username()
+     if field.field_type=='date' or 'fecha' in key or 'fecha' in name:data[field.key]=timezone.localdate().isoformat()
+    record.data=data;record.save(update_fields=['status','current_sn','current_technician','data','updated_at']);RecordMovement.objects.create(record=record,movement_type='assign',technician_name=user.get_username(),destination_sn=self.unit_serial_number,reason=f'Componente instalado en unidad {self.unit_serial_number}.',registered_by=user)
+   return repair
 class RMA(models.Model):
  STATUS=[('open','Abierto'),('review','En evaluación'),('approved','Aprobado'),('rejected','Rechazado'),('closed','Cerrado')];ORIGINS=[('supplier','Proveedor'),('original','Original de la unidad'),('warehouse','Reserva de almacén')];component=models.ForeignKey(Component,on_delete=models.PROTECT,related_name='rmas',null=True,blank=True);component_type=models.ForeignKey(ComponentType,on_delete=models.PROTECT,related_name='rmas',null=True,blank=True);unit=models.ForeignKey(OrderUnit,on_delete=models.PROTECT,related_name='rmas',null=True,blank=True);reservation=models.ForeignKey(ComponentReservation,on_delete=models.PROTECT,related_name='rmas',null=True,blank=True);supplier=models.ForeignKey(Supplier,on_delete=models.PROTECT,related_name='rmas',null=True,blank=True);origin=models.CharField(max_length=16,choices=ORIGINS,default='supplier',db_index=True);reason=models.TextField(blank=True);status=models.CharField(max_length=12,choices=STATUS,default='open',db_index=True);created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='rmas_created');created_at=models.DateTimeField(auto_now_add=True);observations=models.TextField(blank=True)
 class SavedQuery(models.Model):
