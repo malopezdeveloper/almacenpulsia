@@ -15,7 +15,6 @@ def _deny():
 def _table_names():
     with connection.cursor() as cursor:
         names = connection.introspection.table_names(cursor)
-    # django_migrations se protege para no romper el estado de migraciones de Django.
     return sorted(name for name in names if name != 'django_migrations')
 
 
@@ -46,33 +45,88 @@ def truncate_table(request, table_name):
     if table_name not in allowed:
         messages.error(request, 'La tabla indicada no existe o está protegida.')
         return redirect('developer_truncate_console')
-    if request.POST.get('confirm', '').strip() != f'TRUNCATE {table_name}':
-        messages.error(request, f'Escribe exactamente TRUNCATE {table_name} para confirmar.')
-        return redirect('developer_truncate_console')
-
     qn = connection.ops.quote_name
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
-                if connection.vendor == 'postgresql':
-                    cursor.execute(f'TRUNCATE TABLE {qn(table_name)} RESTART IDENTITY CASCADE')
+                if connection.vendor == 'postgresql': cursor.execute(f'TRUNCATE TABLE {qn(table_name)} RESTART IDENTITY CASCADE')
                 elif connection.vendor == 'mysql':
                     cursor.execute('SET FOREIGN_KEY_CHECKS=0')
-                    try:
-                        cursor.execute(f'TRUNCATE TABLE {qn(table_name)}')
-                    finally:
-                        cursor.execute('SET FOREIGN_KEY_CHECKS=1')
+                    try: cursor.execute(f'TRUNCATE TABLE {qn(table_name)}')
+                    finally: cursor.execute('SET FOREIGN_KEY_CHECKS=1')
                 elif connection.vendor == 'sqlite':
-                    # SQLite no implementa TRUNCATE. DELETE + sqlite_sequence reproduce
-                    # el efecto práctico de vaciar la tabla y reiniciar su autoincremento.
                     cursor.execute(f'DELETE FROM {qn(table_name)}')
-                    try:
-                        cursor.execute('DELETE FROM sqlite_sequence WHERE name=%s', [table_name])
-                    except Exception:
-                        pass
-                else:
-                    cursor.execute(f'DELETE FROM {qn(table_name)}')
-        messages.warning(request, f'DESARROLLO: TRUNCATE ejecutado sobre {table_name}.')
+                    try: cursor.execute('DELETE FROM sqlite_sequence WHERE name=%s', [table_name])
+                    except Exception: pass
+                else: cursor.execute(f'DELETE FROM {qn(table_name)}')
+        messages.warning(request, f'DESARROLLO: {table_name} vaciada inmediatamente.')
     except Exception as exc:
-        messages.error(request, f'No se pudo truncar {table_name}: {exc}')
+        messages.error(request, f'No se pudo vaciar {table_name}: {exc}')
     return redirect('developer_truncate_console')
+
+
+# Configuración que debe sobrevivir a las pruebas: usuarios/permisos, sesiones,
+# migraciones, estructura del inventario y zonas/configuración de producción.
+SMART_RESET_KEEP_EXACT = {
+    'django_migrations', 'django_content_type', 'django_session',
+}
+SMART_RESET_KEEP_PREFIXES = (
+    'auth_',
+)
+SMART_RESET_KEEP_FRAGMENTS = (
+    'userprofile', 'businessrole', 'businessroleassignment', 'responsibility',
+    'inventorytable', 'inventoryfield',
+    'productionzone', 'productionmodel', 'productionprocessor', 'mysqlsource',
+    'backupschedule', 'backupdiskconfig', 'securityaccesspolicy',
+)
+
+
+def _smart_reset_tables():
+    result = []
+    for name in _table_names():
+        low = name.lower()
+        if name in SMART_RESET_KEEP_EXACT: continue
+        if any(low.startswith(prefix) for prefix in SMART_RESET_KEEP_PREFIXES): continue
+        if any(fragment in low for fragment in SMART_RESET_KEEP_FRAGMENTS): continue
+        result.append(name)
+    return result
+
+
+@login_required
+@require_POST
+def smart_reset(request):
+    """Borrado instantáneo de datos operativos para ciclos de prueba.
+
+    Se hace a nivel SQL con restricciones FK temporalmente desactivadas cuando el
+    motor lo permite. Así se elimina el grafo completo de datos de prueba sin
+    depender del orden de los modelos, conservando configuración y usuarios.
+    """
+    if not user_is_manager(request.user):
+        return _deny()
+    tables = _smart_reset_tables()
+    qn = connection.ops.quote_name
+    try:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                if connection.vendor == 'mysql': cursor.execute('SET FOREIGN_KEY_CHECKS=0')
+                elif connection.vendor == 'sqlite': cursor.execute('PRAGMA foreign_keys=OFF')
+                try:
+                    for table in tables:
+                        if connection.vendor == 'postgresql':
+                            cursor.execute(f'TRUNCATE TABLE {qn(table)} RESTART IDENTITY CASCADE')
+                        else:
+                            cursor.execute(f'DELETE FROM {qn(table)}')
+                            if connection.vendor == 'sqlite':
+                                try: cursor.execute('DELETE FROM sqlite_sequence WHERE name=%s', [table])
+                                except Exception: pass
+                    if connection.vendor == 'mysql':
+                        for table in tables:
+                            try: cursor.execute(f'ALTER TABLE {qn(table)} AUTO_INCREMENT = 1')
+                            except Exception: pass
+                finally:
+                    if connection.vendor == 'mysql': cursor.execute('SET FOREIGN_KEY_CHECKS=1')
+                    elif connection.vendor == 'sqlite': cursor.execute('PRAGMA foreign_keys=ON')
+        messages.warning(request, f'DESARROLLO: limpieza inteligente completada. {len(tables)} tablas operativas vaciadas; usuarios, permisos, estructura de inventario y zonas conservados.')
+    except Exception as exc:
+        messages.error(request, f'No se pudo completar la limpieza inteligente: {exc}')
+    return redirect('developer_center')
