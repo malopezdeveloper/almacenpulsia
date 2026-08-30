@@ -5,21 +5,25 @@ import django.db.models.deletion
 
 def ensure_stock_order(apps, schema_editor):
     CustomerOrder = apps.get_model('inventory', 'CustomerOrder')
+    User = apps.get_model(*settings.AUTH_USER_MODEL.split('.'))
     stock = CustomerOrder.objects.filter(name__iexact='stock', customer__isnull=True).first()
-    if not stock:
-        CustomerOrder.objects.create(
-            name='STOCK', customer=None, brand='', model='', lot='', processor='', ram='', disk='',
-            status='open', visual_family='green', created_by_id=1 if apps.get_model(*settings.AUTH_USER_MODEL.split('.')).objects.filter(pk=1).exists() else apps.get_model(*settings.AUTH_USER_MODEL.split('.')).objects.order_by('pk').values_list('pk', flat=True).first()
-        )
+    creator = User.objects.order_by('pk').first()
+    if not stock and creator:
+        CustomerOrder.objects.create(name='STOCK', customer=None, brand='', model='', lot='', processor='', ram='', disk='', status='open', visual_family='green', created_by_id=creator.pk)
 
 
 class Migration(migrations.Migration):
     dependencies = [('inventory', '0040_physical_unit_location')]
 
     operations = [
-        migrations.AlterField(
-            model_name='customerorder', name='customer',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='orders', to='inventory.customer'),
+        # La BD admite NULL para el pedido técnico STOCK. El estado del modelo se
+        # mantiene compatible para no convertir en opcional el cliente del resto.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[migrations.AlterField(
+                model_name='customerorder', name='customer',
+                field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='orders', to='inventory.customer'),
+            )],
+            state_operations=[],
         ),
         migrations.CreateModel(
             name='BoardPriority',
@@ -33,9 +37,6 @@ class Migration(migrations.Migration):
             ],
             options={'ordering': ('zone__position', 'zone__name', 'order__name', 'pk')},
         ),
-        migrations.AddConstraint(
-            model_name='boardpriority',
-            constraint=models.UniqueConstraint(fields=('order', 'zone'), name='unique_board_priority_order_zone'),
-        ),
+        migrations.AddConstraint(model_name='boardpriority', constraint=models.UniqueConstraint(fields=('order', 'zone'), name='unique_board_priority_order_zone')),
         migrations.RunPython(ensure_stock_order, migrations.RunPython.noop),
     ]
