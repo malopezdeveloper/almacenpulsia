@@ -42,6 +42,11 @@ def _fill_from_aiken(unit):
  if physical_changed:unit.physical_unit.save(update_fields=physical_changed)
  return changed
 
+def _pending_attention(unit):
+ open_alerts=unit.procurement_alerts.filter(status='open').count()
+ open_reservations=unit.component_reservations.filter(status__in=['active','installed']).count()
+ return open_alerts,open_reservations
+
 @login_required
 def serial_lookup(request):
  if not _can_work(request.user):return _deny()
@@ -72,8 +77,8 @@ def my_open_interventions(request):
  now=timezone.now();today=timezone.localdate();rows=[]
  qs=UnitIntervention.objects.filter(worker=request.user,created_at__date=today).select_related('unit','unit__physical_unit','unit__order','zone','destination_zone').order_by('created_at','pk')
  for i in qs:
-  u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()))
-  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
+  u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()));open_alerts,open_reservations=_pending_attention(u)
+  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'has_attention':bool(open_alerts or open_reservations),'open_alerts':open_alerts,'open_reservations':open_reservations,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
  zones=[{'id':z.pk,'name':z.name} for z in ProductionZone.objects.filter(is_active=True).order_by('position','name')]
  orders=[{'id':o.pk,'name':o.name,'customer':o.customer.name,'lot':o.lot} for o in CustomerOrder.objects.filter(status='open').select_related('customer').order_by('-id')]
  return JsonResponse({'results':rows,'zones':zones,'orders':orders})
