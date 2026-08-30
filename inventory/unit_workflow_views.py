@@ -5,7 +5,7 @@ from django.http import JsonResponse,HttpResponseForbidden
 from django.shortcuts import get_object_or_404,redirect,render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
-from .models import ProductionModelMySQLSource,ProductionZone
+from .models import ProductionModelMySQLSource,ProductionZone,AuditLog
 from .order_models import CustomerOrder,OrderUnit,PhysicalUnit,ComponentType,ProcurementAlert,ComponentReservation
 from .external_mysql import find_aiken_unit_exact
 from .unit_workflow_models import UnitIntervention,PhysicalUnitLocation,UnitAlertOrigin,ReservationInstallation,RepairConfirmation
@@ -17,6 +17,7 @@ def _can_confirm(u):return u.is_superuser or user_has_permission(u,'repairs.mana
 def _deny():return HttpResponseForbidden('No tienes permiso para esta operación.')
 def _clean(v):return ' '.join(str(v or '').strip().split())
 def _local_cycle(sn):return OrderUnit.objects.select_related('order','order__customer','physical_unit').filter(serial_number__iexact=sn).order_by('-imported_at','-pk').first()
+def _order_cycle(sn,order_id):return OrderUnit.objects.select_related('order','order__customer','physical_unit').filter(serial_number__iexact=sn,order_id=order_id).order_by('-imported_at','-pk').first()
 def _snapshot(u):return {'serial_number':u.serial_number,'physical_unit_id':u.physical_unit_id,'order_id':u.order_id,'order':u.order.name,'brand':u.brand,'model':u.model,'processor':u.processor,'ram':u.ram,'disk':u.disk,'aiken_lot':u.aiken_lot}
 def _value(r,n,f=''):return (r.POST.get(n) if n in r.POST else f) or ''
 def _close_intervention(i,now,destination=None):
@@ -44,19 +45,26 @@ def _fill_from_aiken(unit):
 @login_required
 def serial_lookup(request):
  if not _can_work(request.user):return _deny()
- sn=(request.GET.get('sn') or '').strip()
+ sn=(request.GET.get('sn') or '').strip();context=(request.GET.get('work_order') or 'stock').strip()
  if not sn:return JsonResponse({'status':'empty'})
- local=_local_cycle(sn)
+ if context!='stock':
+  try:order_id=int(context)
+  except (TypeError,ValueError):return JsonResponse({'status':'invalid_context','message':'Selecciona un pedido activo o STOCK.'},status=400)
+  order=CustomerOrder.objects.filter(pk=order_id,status='open').first()
+  if not order:return JsonResponse({'status':'invalid_context','message':'El pedido seleccionado ya no está activo.'},status=409)
+  local=_order_cycle(sn,order.pk)
+  if not local:return JsonResponse({'status':'wrong_order','serial_number':sn,'order_id':order.pk,'order':order.name,'message':f'{sn} NO está dentro del pedido {order.name}.'})
+ else:local=_local_cycle(sn)
  if local:
   _fill_from_aiken(local);current=PhysicalUnitLocation.objects.filter(physical_unit=local.physical_unit).select_related('zone','worker').first()
-  return JsonResponse({'status':'found','source':'local','unit_id':local.pk,'order_id':local.order_id,'order':local.order.name,'serial_number':local.serial_number,'brand':local.brand,'model':local.model,'processor':local.processor,'ram':local.ram,'disk':local.disk,'current_zone':current.zone.name if current else '','current_worker':current.worker.get_username() if current else ''})
+  return JsonResponse({'status':'found','source':'local','unit_id':local.pk,'order_id':local.order_id,'order':local.order.name,'serial_number':local.serial_number,'brand':local.brand,'model':local.model,'processor':local.processor,'ram':local.ram,'disk':local.disk,'current_zone':current.zone.name if current else '','current_worker':current.worker.get_username() if current else '','message':f'{sn} pertenece al pedido {local.order.name}.' if context!='stock' else f'{sn} localizado para trabajo STOCK.'})
  source=ProductionModelMySQLSource.objects.order_by('-updated_at').first()
  if source:
   try:
    row=find_aiken_unit_exact(source,sn)
-   if row:return JsonResponse({'status':'found','source':'aiken','serial_number':str(row.get('serial_number') or sn),'aiken':row})
+   if row:return JsonResponse({'status':'found','source':'aiken','serial_number':str(row.get('serial_number') or sn),'aiken':row,'message':f'{sn} localizado en AIKEN para trabajo STOCK.'})
   except Exception as exc:return JsonResponse({'status':'aiken_error','serial_number':sn,'message':str(exc),'manual_confirmation_required':True})
- return JsonResponse({'status':'not_found','serial_number':sn,'manual_confirmation_required':True})
+ return JsonResponse({'status':'not_found','serial_number':sn,'manual_confirmation_required':True,'message':f'{sn} no se ha encontrado.'})
 
 @login_required
 def my_open_interventions(request):
@@ -65,9 +73,10 @@ def my_open_interventions(request):
  qs=UnitIntervention.objects.filter(worker=request.user,created_at__date=today).select_related('unit','unit__physical_unit','unit__order','zone','destination_zone').order_by('created_at','pk')
  for i in qs:
   u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()))
-  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/'})
+  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
  zones=[{'id':z.pk,'name':z.name} for z in ProductionZone.objects.filter(is_active=True).order_by('position','name')]
- return JsonResponse({'results':rows,'zones':zones})
+ orders=[{'id':o.pk,'name':o.name,'customer':o.customer.name,'lot':o.lot} for o in CustomerOrder.objects.filter(status='open').select_related('customer').order_by('-id')]
+ return JsonResponse({'results':rows,'zones':zones,'orders':orders})
 
 @login_required
 @require_POST
@@ -86,9 +95,16 @@ def update_unit_field(request,unit_pk):
 @require_POST
 def start_unit_intervention(request):
  if not _can_work(request.user):return _deny()
- sn=(request.POST.get('serial_number') or '').strip();origin=get_object_or_404(ProductionZone,pk=request.POST.get('origin_zone') or request.POST.get('zone'),is_active=True)
+ sn=(request.POST.get('serial_number') or '').strip();origin=get_object_or_404(ProductionZone,pk=request.POST.get('origin_zone') or request.POST.get('zone'),is_active=True);context=(request.POST.get('work_order') or 'stock').strip()
  if not sn:return redirect('production_board')
- unit=_local_cycle(sn);source_name='local';extra={}
+ selected_order=None
+ if context!='stock':
+  try:selected_order=get_object_or_404(CustomerOrder,pk=int(context),status='open')
+  except (TypeError,ValueError):messages.error(request,'Selecciona un pedido activo o STOCK.');return redirect('production_board')
+  unit=_order_cycle(sn,selected_order.pk)
+  if not unit:messages.error(request,f'{sn} NO está dentro del pedido {selected_order.name}. No se ha añadido a la pizarra.');return redirect('production_board')
+ else:unit=_local_cycle(sn)
+ source_name='local';extra={'work_context':'order' if selected_order else 'stock','selected_order_id':selected_order.pk if selected_order else None,'selected_order':selected_order.name if selected_order else 'STOCK'}
  if unit:_fill_from_aiken(unit)
  if not unit:
   source=ProductionModelMySQLSource.objects.order_by('-updated_at').first();row=None
@@ -97,7 +113,7 @@ def start_unit_intervention(request):
    except Exception:row=None
   if row:
    if not request.POST.get('order'):return render(request,'inventory/unit_intervention_confirm.html',{'serial_number':sn,'zone':origin,'source':'aiken','aiken':row,'orders':CustomerOrder.objects.filter(status='open').order_by('-id')})
-   order=get_object_or_404(CustomerOrder,pk=request.POST['order'],status='open');original={k:_clean(row.get(k)) for k in ('brand','model','processor','ram','disk','lot')};vals={k:_value(request,k,original[k]).strip() for k in UNIT_FIELDS};lot=_value(request,'aiken_lot',original['lot'] or order.lot).strip();physical,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=vals);unit,_=OrderUnit.objects.get_or_create(order=order,physical_unit=physical,defaults={'serial_number':sn,'aiken_lot':lot,**vals});source_name='aiken';extra={'aiken_original':original,'worker_values':dict(vals,lot=lot)}
+   order=get_object_or_404(CustomerOrder,pk=request.POST['order'],status='open');original={k:_clean(row.get(k)) for k in ('brand','model','processor','ram','disk','lot')};vals={k:_value(request,k,original[k]).strip() for k in UNIT_FIELDS};lot=_value(request,'aiken_lot',original['lot'] or order.lot).strip();physical,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=vals);unit,_=OrderUnit.objects.get_or_create(order=order,physical_unit=physical,defaults={'serial_number':sn,'aiken_lot':lot,**vals});source_name='aiken';extra.update({'aiken_original':original,'worker_values':dict(vals,lot=lot)})
   else:
    if request.POST.get('confirm_manual')!='yes':return render(request,'inventory/unit_intervention_confirm.html',{'serial_number':sn,'zone':origin,'source':'manual','orders':CustomerOrder.objects.filter(status='open').order_by('-id')})
    order=get_object_or_404(CustomerOrder,pk=request.POST.get('order'),status='open');vals={k:_value(request,k).strip() for k in UNIT_FIELDS};physical,_=PhysicalUnit.objects.get_or_create(serial_number=sn,defaults=vals);unit,_=OrderUnit.objects.get_or_create(order=order,physical_unit=physical,defaults={'serial_number':sn,**vals});source_name='manual'
@@ -109,7 +125,18 @@ def start_unit_intervention(request):
   if current:_close_intervention(current.intervention,now,origin)
   for old in UnitIntervention.objects.select_for_update().filter(unit__physical_unit=physical,finished_at__isnull=True):_close_intervention(old,now,origin)
   snap=_snapshot(unit);snap.update(extra);i=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source=source_name,source_snapshot=snap);PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':i,'worker':request.user,'entered_at':now})
- messages.success(request,f'{sn} está ahora en {origin.name}. La estancia anterior se cerró automáticamente si existía y el tiempo de {origin.name} empieza ahora.');return redirect('production_board')
+ messages.success(request,f'{sn} añadido a Mi Pizarra ({selected_order.name if selected_order else "STOCK"}).');return redirect('production_board')
+
+@login_required
+@require_POST
+def delete_unit_intervention(request,intervention_pk):
+ if not _can_work(request.user):return _deny()
+ with transaction.atomic():
+  i=get_object_or_404(UnitIntervention.objects.select_for_update().select_related('unit','unit__physical_unit','zone'),pk=intervention_pk,worker=request.user)
+  sn=i.unit.serial_number;details={'serial_number':sn,'intervention_id':i.pk,'unit_id':i.unit_id,'order_id':i.unit.order_id,'zone':i.zone.name,'started_at':i.created_at.isoformat(),'finished_at':i.finished_at.isoformat() if i.finished_at else None,'duration_seconds':i.duration_seconds,'source':i.source,'source_snapshot':i.source_snapshot}
+  if i.alerts.exists() or i.component_installations.exists() or i.repair_confirmations.exists():return JsonResponse({'ok':False,'error':'Esta fila ya tiene trazabilidad asociada (alertas, instalaciones o confirmaciones) y no puede borrarse.'},status=409)
+  PhysicalUnitLocation.objects.filter(intervention=i).delete();AuditLog.objects.create(user=request.user,action='unit_board_row_deleted',object_type='UnitIntervention',object_id=str(i.pk),details=details);i.delete()
+ return JsonResponse({'ok':True,'serial_number':sn})
 
 @login_required
 def unit_workbench(request,intervention_pk):
