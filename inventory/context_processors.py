@@ -1,12 +1,12 @@
 from .models import ChatMessage, InventoryTable, Reservation, Loan, LoanRequest, UserProfile, AccessUpgradeRequest, Incident, SecurityAccessEvent, BackupDiskConfig, ProductionZone
 from .order_models import ProcurementAlert
-from .permissions import user_is_purchasing
+from .permissions import user_is_purchasing,user_is_manager
 from .storage_admin import request_storage_admin
 
 def inventory_navigation(request):
     if not request.user.is_authenticated: return {}
     profile,_=UserProfile.objects.get_or_create(user=request.user); is_guest=profile.is_guest
-    context={'is_guest':is_guest,'inventory_tables':InventoryTable.objects.none() if is_guest else InventoryTable.objects.filter(active=True).order_by('position','name'),'unread_messages_count':ChatMessage.objects.filter(recipient=request.user,read_at__isnull=True).count(),'global_zones':ProductionZone.objects.filter(is_active=True).order_by('position','name'),'procurement_alert_count':0,'is_purchasing_user':user_is_purchasing(request.user)}
+    context={'is_guest':is_guest,'is_manager_user':user_is_manager(request.user),'inventory_tables':InventoryTable.objects.none() if is_guest else InventoryTable.objects.filter(active=True).order_by('position','name'),'unread_messages_count':ChatMessage.objects.filter(recipient=request.user,read_at__isnull=True).count(),'global_zones':ProductionZone.objects.filter(is_active=True).order_by('position','name'),'procurement_alert_count':0,'is_purchasing_user':user_is_purchasing(request.user)}
     if request.user.is_staff:
         try: context['security_red_count']=SecurityAccessEvent.objects.filter(reviewed=False,level='RED').count(); context['security_yellow_count']=SecurityAccessEvent.objects.filter(reviewed=False,level='YELLOW').count()
         except Exception: context['security_red_count']=0; context['security_yellow_count']=0
