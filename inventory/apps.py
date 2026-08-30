@@ -8,7 +8,7 @@ class InventoryConfig(AppConfig):
  def ready(self):
   # Importar los módulos de modelos del dominio para que Django los registre.
   # La lógica de ciclo de vida vive ahora en los modelos/vistas, no en monkey-patches.
-  from . import order_models,responsibility_models,component_flow_models,unit_workflow_models
+  from . import order_models,responsibility_models,component_flow_models,unit_workflow_models,priority_models
   from .db_utils import install_sqlite_pragmas
   install_sqlite_pragmas()
   blocked={'makemigrations','migrate','collectstatic','test','check','shell','createsuperuser'}
