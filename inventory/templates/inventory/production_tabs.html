@@ -5,3 +5,31 @@
   <a class="btn {% if request.resolver_match.url_name != 'production_reports' %}secondary{% endif %}" href="{% url 'production_reports' %}">Pizarra General e informes</a>
   {% endif %}
 </div>
+{% if request.resolver_match.url_name == 'production_board' %}
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+ const body=document.getElementById('queueBody');
+ if(!body)return;
+ function fmt(n){return Math.abs(n-Math.round(n))<.01?Math.round(n)+' GB':n.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')+' GB'}
+ function mask(raw){
+  let text=String(raw||'').trim().replace(/\s+/g,' ');if(!text)return '';
+  let parts=text.split(/\s+\+\s+/),caps=[];
+  parts.forEach(part=>{
+   let re=/(\d+(?:[\.,]\d+)?)\s*(TB|GB|MB)\b/gi,m,last=null;
+   while((m=re.exec(part))!==null)last={n:m[1],u:m[2],end:re.lastIndex};
+   if(!last)return;
+   let n=parseFloat(last.n.replace(',','.'));if(!Number.isFinite(n))return;
+   let u=last.u.toUpperCase();if(u==='TB')n*=1024;else if(u==='MB')n/=1024;
+   let mult=1;
+   if(parts.length===1){let mm=part.slice(last.end).match(/(?:x|×)\s*(\d+)\b/i);if(mm)mult=Math.max(1,parseInt(mm[1],10)||1)}
+   for(let i=0;i<mult;i++)caps.push(n);
+  });
+  if(!caps.length)return text;
+  let groups=new Map();caps.forEach(n=>{let k=Math.round(n*10000)/10000;groups.set(k,(groups.get(k)||0)+1)});
+  return [...groups.entries()].map(([n,c])=>fmt(Number(n))+(c>1?' x '+c:'')).join(' + ');
+ }
+ function apply(){body.querySelectorAll('tr').forEach(tr=>[3,4].forEach(i=>{let td=tr.children[i];if(!td||td.querySelector('.fill-btn'))return;let out=mask(td.textContent);if(out&&out!==td.textContent)td.textContent=out}))}
+ let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{apply();queued=false})}).observe(body,{childList:true,subtree:true,characterData:true});apply();
+});
+</script>
+{% endif %}
