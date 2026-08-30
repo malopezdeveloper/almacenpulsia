@@ -48,6 +48,59 @@ def _aiken_map(conn):
     return {'id':_pick(cols,'UnitID','ID','Id'),'serial_number':_pick(cols,'SerialNumber','Serial','SN','ServiceTag'),'lot':_pick(cols,'LotID','Lot','LotNumber','BatchID'),'brand':_pick(cols,'Manufacturer','Brand','Marca'),'model':_pick(cols,'Model','Modelo'),'processor':_pick(cols,'Processor','CPU','ProcessorName'),'ram':_pick(cols,'RAM','Memory','MemorySize'),'disk':_pick(cols,'Disk','Storage','HDD','SSD')}
 
 
+def _text(value):
+    return " ".join(str(value or "").strip().split())
+
+
+def _device_value(row):
+    """Mismo contrato descriptivo usado por PULSIA AWBC Exporter."""
+    values=(row.get('Manufacturer'),row.get('Model'),row.get('Info1'),row.get('Size'),row.get('Speed'))
+    return " ".join(_text(value) for value in values if _text(value))
+
+
+def _attach_technical_devices(conn, rows):
+    """Completa CPU, RAM y disco desde Units_Devices, igual que Exporter.
+
+    Units contiene los datos de identidad. El hardware auditado vive en
+    Units_Devices y se relaciona mediante UnitID. Se conserva el registro más
+    reciente de cada Category/Didx para evitar duplicados de auditoría.
+    """
+    unit_ids=[row.get('id') for row in rows if row.get('id') is not None]
+    if not unit_ids:return rows
+    by_id={row.get('id'):row for row in rows}
+    latest={}
+    for start in range(0,len(unit_ids),500):
+        batch=unit_ids[start:start+500]
+        placeholders=','.join(['%s']*len(batch))
+        with conn.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT ID,UnitID,Category,Manufacturer,Model,Size,Speed,Info1,Info2,Info3,Didx
+                FROM Units_Devices
+                WHERE UnitID IN ({placeholders})
+                  AND UPPER(TRIM(Category)) IN ('CPU','RAM','STORAGE')
+                ORDER BY UnitID,Category,Didx,ID
+            """,batch)
+            names=[d[0] for d in cursor.description]
+            for values in cursor.fetchall():
+                device=dict(zip(names,values));category=_text(device.get('Category')).upper()
+                key=(device.get('UnitID'),category,device.get('Didx'))
+                current=latest.get(key)
+                if current is None or int(device.get('ID') or 0)>int(current.get('ID') or 0):latest[key]=device
+    grouped={}
+    for device in latest.values():
+        grouped.setdefault((device.get('UnitID'),_text(device.get('Category')).upper()),[]).append(device)
+    for unit_id,row in by_id.items():
+        cpu=sorted(grouped.get((unit_id,'CPU'),[]),key=lambda d:(d.get('Didx') or 0,d.get('ID') or 0))
+        ram=sorted(grouped.get((unit_id,'RAM'),[]),key=lambda d:(d.get('Didx') or 0,d.get('ID') or 0))
+        storage=sorted(grouped.get((unit_id,'STORAGE'),[]),key=lambda d:(d.get('Didx') or 0,d.get('ID') or 0))
+        # Si Units ya trae un valor técnico válido se respeta. Si no, usamos
+        # exactamente los dispositivos auditados que emplea Exporter.
+        if not _text(row.get('processor')) and cpu:row['processor']=_device_value(cpu[0])
+        if not _text(row.get('ram')) and ram:row['ram']=' + '.join(filter(None,(_device_value(d) for d in ram)))
+        if not _text(row.get('disk')) and storage:row['disk']=' + '.join(filter(None,(_device_value(d) for d in storage)))
+    return rows
+
+
 def test_source(config):
     conn=connect_mysql(config)
     try:
@@ -56,6 +109,9 @@ def test_source(config):
             raise ValueError('La tabla Units no contiene una columna de número de serie reconocible.')
         with conn.cursor() as cursor:
             cursor.execute(f"SELECT `{mapping['serial_number']}` FROM Units LIMIT 1")
+            cursor.fetchone()
+            # La importación técnica usa el mismo esquema real que Exporter.
+            cursor.execute("SELECT UnitID,Category,Manufacturer,Model,Size,Speed,Info1,Info2,Info3,Didx,ID FROM Units_Devices LIMIT 1")
             cursor.fetchone()
     finally:conn.close()
 
@@ -82,7 +138,7 @@ def _select_expr(mapping):
 
 
 def search_aiken_units(config, serial_query='', lot=None, limit=50, exact_serial=False):
-    """Consulta AIKEN solo en lectura. exact_serial evita incorporar coincidencias parciales."""
+    """Consulta AIKEN en lectura y completa hardware desde Units_Devices."""
     conn=connect_mysql(config)
     try:
         mapping=_aiken_map(conn)
@@ -98,7 +154,8 @@ def search_aiken_units(config, serial_query='', lot=None, limit=50, exact_serial
             where.append(f"CAST(`{mapping['lot']}` AS CHAR)=%s");params.append(str(lot).strip())
         sql=f"SELECT {_select_expr(mapping)} FROM Units"+((' WHERE '+' AND '.join(where)) if where else '')+f" ORDER BY `{mapping['serial_number']}` LIMIT %s";params.append(max(1,min(int(limit),5000)))
         with conn.cursor() as cursor:
-            cursor.execute(sql,params);names=[d[0] for d in cursor.description];return [dict(zip(names,row)) for row in cursor.fetchall()]
+            cursor.execute(sql,params);names=[d[0] for d in cursor.description];rows=[dict(zip(names,row)) for row in cursor.fetchall()]
+        return _attach_technical_devices(conn,rows)
     finally:conn.close()
 
 
