@@ -8,11 +8,12 @@ from django.views.decorators.http import require_POST
 from .models import ProductionEntry,ProductionModel,ProductionProcessor,ProductionZone,ProductionModelMySQLSource
 from .order_models import Customer,Supplier,CustomerOrder,OrderUnit,PhysicalUnit,ComponentType,Component,Repair,ComponentReservation,RMA,ProcurementAlert,DevelopmentBatch
 from .external_mysql import list_aiken_lots,search_aiken_units,test_source
+from .permissions import user_is_manager
 DEV_PREFIX='DEV-'
-def _is_developer(user):return bool(user.is_authenticated and (user.is_superuser or user.pulsia_role_assignments.filter(role__active=True,role__code='desarrollador').exists()))
+def _is_developer(user):return bool(user.is_authenticated and (user_is_manager(user) or user.pulsia_role_assignments.filter(role__active=True,role__code='desarrollador').exists()))
 def _deny():
  from django.http import HttpResponseForbidden
- return HttpResponseForbidden('Perfil Desarrollador requerido.')
+ return HttpResponseForbidden('Perfil Gestor o Desarrollador requerido.')
 def _delete_manifest(m):
  RMA.objects.filter(pk__in=m.get('rmas',[])).delete();ProcurementAlert.objects.filter(pk__in=m.get('alerts',[])).delete();ComponentReservation.objects.filter(pk__in=m.get('reservations',[])).delete();Repair.objects.filter(pk__in=m.get('repairs',[])).delete();ProductionEntry.objects.filter(pk__in=m.get('production_entries',[])).delete();OrderUnit.objects.filter(pk__in=m.get('units',[])).delete();CustomerOrder.objects.filter(pk__in=m.get('orders',[])).delete();Component.objects.filter(pk__in=m.get('components',[])).delete();PhysicalUnit.objects.filter(pk__in=m.get('physical_units',[]),order_cycles__isnull=True).delete();ProductionModel.objects.filter(pk__in=m.get('production_models',[]),entries__isnull=True).delete();ProductionProcessor.objects.filter(pk__in=m.get('production_processors',[]),entries__isnull=True).delete();ProductionZone.objects.filter(pk__in=m.get('production_zones',[]),unit_interventions__isnull=True).delete();Customer.objects.filter(pk__in=m.get('customers',[])).delete();Supplier.objects.filter(pk__in=m.get('suppliers',[])).delete()
 def _aiken_rows():
