@@ -78,7 +78,7 @@ def my_open_interventions(request):
  qs=UnitIntervention.objects.filter(worker=request.user,created_at__date=today).select_related('unit','unit__physical_unit','unit__order','zone','destination_zone').order_by('created_at','pk')
  for i in qs:
   u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()));open_alerts,open_reservations=_pending_attention(u)
-  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'has_attention':bool(open_alerts or open_reservations),'open_alerts':open_alerts,'open_reservations':open_reservations,'url':f'/produccion/intervencion/{i.pk}/','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
+  rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'has_attention':bool(open_alerts or open_reservations),'open_alerts':open_alerts,'open_reservations':open_reservations,'url':f'/produccion/intervencion/{i.pk}/','alert_url':f'/produccion/intervencion/{i.pk}/?mode=alerts','installation_url':f'/produccion/intervencion/{i.pk}/?mode=installation','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','expedient_url':f'/pedidos/unidad/{u.pk}/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
  zones=[{'id':z.pk,'name':z.name} for z in ProductionZone.objects.filter(is_active=True).order_by('position','name')]
  orders=[{'id':o.pk,'name':o.name,'customer':o.customer.name,'lot':o.lot} for o in CustomerOrder.objects.filter(status='open').select_related('customer').order_by('-id')]
  return JsonResponse({'results':rows,'zones':zones,'orders':orders})
@@ -147,7 +147,9 @@ def delete_unit_intervention(request,intervention_pk):
 def unit_workbench(request,intervention_pk):
  i=get_object_or_404(UnitIntervention.objects.select_related('unit','unit__order','unit__order__customer','worker','zone','destination_zone'),pk=intervention_pk)
  if not _can_work(request.user):return _deny()
- u=i.unit;return render(request,'inventory/unit_workbench.html',{'intervention':i,'unit':u,'zones':ProductionZone.objects.filter(is_active=True).exclude(pk=i.zone_id).order_by('position','name'),'alerts':u.procurement_alerts.select_related('component_type').order_by('-created_at'),'reservations':u.component_reservations.select_related('component','technician','installed_by','repair').order_by('-reserved_at'),'component_types':ComponentType.objects.filter(active=True).order_by('name'),'can_confirm':_can_confirm(request.user)})
+ mode=(request.GET.get('mode') or 'summary').strip().lower()
+ if mode not in ('summary','alerts','installation'):mode='summary'
+ u=i.unit;return render(request,'inventory/unit_workbench.html',{'mode':mode,'intervention':i,'unit':u,'zones':ProductionZone.objects.filter(is_active=True).exclude(pk=i.zone_id).order_by('position','name'),'alerts':u.procurement_alerts.select_related('component_type').order_by('-created_at'),'reservations':u.component_reservations.select_related('component','technician','installed_by','repair').order_by('-reserved_at'),'component_types':ComponentType.objects.filter(active=True).order_by('name'),'can_confirm':_can_confirm(request.user)})
 @login_required
 @require_POST
 def finish_unit_intervention(request,intervention_pk):
@@ -161,16 +163,28 @@ def finish_unit_intervention(request,intervention_pk):
 @require_POST
 def create_unit_alert(request,intervention_pk):
  if not _can_work(request.user):return _deny()
- i=get_object_or_404(UnitIntervention.objects.select_related('unit','zone'),pk=intervention_pk,finished_at__isnull=True);kind=get_object_or_404(ComponentType,pk=request.POST.get('component_type'),active=True);alert=ProcurementAlert.objects.create(unit=i.unit,component_type=kind,message=(request.POST.get('message') or f'Necesidad de {kind.name}')[:500]);UnitAlertOrigin.objects.create(alert=alert,intervention=i,origin_worker=request.user,origin_zone=i.zone);messages.success(request,'Alerta creada. La unidad puede continuar a otra zona con la alerta abierta.');return redirect('unit_workbench',intervention_pk=i.pk)
+ i=get_object_or_404(UnitIntervention.objects.select_related('unit','zone'),pk=intervention_pk,finished_at__isnull=True);kind=get_object_or_404(ComponentType,pk=request.POST.get('component_type'),active=True);alert=ProcurementAlert.objects.create(unit=i.unit,component_type=kind,message=(request.POST.get('message') or f'Necesidad de {kind.name}')[:500]);UnitAlertOrigin.objects.create(alert=alert,intervention=i,origin_worker=request.user,origin_zone=i.zone);messages.success(request,'Alerta creada. La unidad continuará marcada hasta que la alerta se duerma o resuelva.');return redirect(f'/produccion/intervencion/{i.pk}/?mode=alerts')
 @login_required
 @require_POST
 def install_reservation(request,intervention_pk,reservation_pk):
  if not _can_work(request.user):return _deny()
  i=get_object_or_404(UnitIntervention,pk=intervention_pk,finished_at__isnull=True);r=get_object_or_404(ComponentReservation,pk=reservation_pk,unit=i.unit)
  if r.status=='active':r.install(request.user);ReservationInstallation.objects.get_or_create(reservation=r,defaults={'intervention':i,'installed_by':request.user})
- return redirect('unit_workbench',intervention_pk=i.pk)
+ return redirect(f'/produccion/intervencion/{i.pk}/?mode=installation')
 @login_required
 @require_POST
 def confirm_repair(request,intervention_pk,reservation_pk):
  if not _can_confirm(request.user):return _deny()
- i=get_object_or_404(UnitIntervention,pk=intervention_pk,finished_at__isnull=True);r=get_object_or_404(ComponentReservation.objects.select_related('repair','component','component__component_kind'),pk=reservation_pk,unit=i.unit,status='installed');RepairConfirmation.objects.get_or_create(repair=r.repair,defaults={'intervention':i,'confirmed_by':request.user});return redirect('unit_workbench',intervention_pk=i.pk)
+ i=get_object_or_404(UnitIntervention,pk=intervention_pk,finished_at__isnull=True);r=get_object_or_404(ComponentReservation.objects.select_related('repair','component','component__component_kind'),pk=reservation_pk,unit=i.unit,status='installed')
+ with transaction.atomic():
+  RepairConfirmation.objects.get_or_create(repair=r.repair,defaults={'intervention':i,'confirmed_by':request.user});r.status='confirmed';r.resolved_at=timezone.now();r.save(update_fields=['status','resolved_at'])
+ messages.success(request,'Reparación confirmada. La reserva queda resuelta y el componente permanece instalado en la unidad.')
+ return redirect(f'/produccion/intervencion/{i.pk}/?mode=installation')
+@login_required
+@require_POST
+def sleep_unit_alert(request,intervention_pk,alert_pk):
+ if not _can_confirm(request.user):return _deny()
+ i=get_object_or_404(UnitIntervention.objects.select_related('unit'),pk=intervention_pk);a=get_object_or_404(ProcurementAlert,pk=alert_pk,unit=i.unit,status='open')
+ a.status='sleeping';a.resolved_at=timezone.now();a.save(update_fields=['status','resolved_at']);AuditLog.objects.create(user=request.user,action='unit_alert_slept',object_type='ProcurementAlert',object_id=str(a.pk),details={'serial_number':i.unit.serial_number,'intervention_id':i.pk,'message':a.message})
+ messages.success(request,'Alerta dormida. Permanece en el historial pero deja de provocar el aviso luminoso.')
+ return redirect(f'/produccion/intervencion/{i.pk}/?mode=installation')
