@@ -14,6 +14,7 @@ def _deny():
  from django.http import HttpResponseForbidden
  return HttpResponseForbidden('No tienes permiso para modificar el pedido.')
 def _text(v):return ' '.join(str(v or '').strip().split())
+def _is_stock(order):return order.name.strip().casefold()=='stock' and order.customer_id is None
 def _values(order,row,physical=None):
  return {f:_text(row.get(f)) or _text(getattr(physical,f,'')) or _text(getattr(order,f,'')) for f in ('brand','model','processor','ram','disk')}
 def _fill(obj,values):
@@ -30,6 +31,14 @@ def set_order_status(request,pk,action):
  if action not in ('close','reopen'):return redirect('order_detail',pk=pk)
  with transaction.atomic():
   order=get_object_or_404(CustomerOrder.objects.select_for_update(),pk=pk)
+  if _is_stock(order):
+   changed=[]
+   if order.status!='open':order.status='open';changed.append('status')
+   if order.closed_at is not None:order.closed_at=None;changed.append('closed_at')
+   if order.closed_by_id is not None:order.closed_by=None;changed.append('closed_by')
+   if changed:order.save(update_fields=changed)
+   messages.error(request,'STOCK es permanente: siempre está abierto y no se puede cerrar.')
+   return redirect('order_detail',pk=pk)
   if action=='close' and order.status!='closed':order.status='closed';order.closed_at=timezone.now();order.closed_by=request.user;order.save(update_fields=['status','closed_at','closed_by']);OrderStatusEvent.objects.create(order=order,action='closed',user=request.user);messages.success(request,'Pedido cerrado. Su historial y unidades se conservan.')
   elif action=='reopen' and order.status!='open':order.status='open';order.closed_at=None;order.closed_by=None;order.save(update_fields=['status','closed_at','closed_by']);OrderStatusEvent.objects.create(order=order,action='reopened',user=request.user);messages.success(request,'Pedido reabierto.')
  return redirect('order_detail',pk=pk)
