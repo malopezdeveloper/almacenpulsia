@@ -1,7 +1,55 @@
 {% extends "inventory/base.html" %}
+{% load reservation_tags %}
 {% block content %}
+{% active_reservation_zones as reservation_zones %}
+<style>
+.record-row{cursor:pointer}.record-row:hover{background:#f4f8fc}.record-modal{display:none;position:fixed;inset:0;background:#0008;z-index:40;padding:5vh 16px;overflow:auto}.record-modal.open{display:block}.record-modal-box{max-width:720px;margin:auto;background:#fff;border-radius:12px;padding:22px;box-shadow:0 18px 60px #0004}.record-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.record-modal-close{border:0;background:transparent;font-size:26px;cursor:pointer}.record-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:16px 0}.record-field{padding:10px;border:1px solid #e1e6ed;border-radius:8px;background:#f9fbfd}.record-field strong{display:block;font-size:11px;color:#748199;margin-bottom:4px}.reserve-box{border-top:1px solid #e1e6ed;margin-top:16px;padding-top:16px}.reserve-unavailable{padding:12px;background:#f4f5f7;border-radius:8px;color:#667085}
+</style>
 <div class="top"><div><h1>{{table.name}}</h1><span class="muted">Haz clic sobre un objeto para consultar sus datos o reservarlo.</span></div>{% if is_admin %}<a class="btn" href="{% url 'add_item' %}?table={{table.slug}}">＋ Añadir objeto</a>{% endif %}</div>
 <form class="search"><input name="q" value="{{query}}" placeholder="Filtrar cualquier campo visible de esta tabla…"><button class="btn">Filtrar</button></form>
 <div class="card"><div class="table-wrap"><table><thead><tr>{% for f in fields %}<th>{{f.name}}</th>{% endfor %}<th>ESTADO</th>{% if is_admin %}<th>ACCIONES</th>{% endif %}</tr></thead><tbody id="records-body">{% include "inventory/_table_rows.html" %}</tbody></table></div><div id="infinite-status" data-next="{{next_page|default:''}}" data-query="{{query}}">{% if next_page %}Desplázate para cargar más objetos…{% else %}Fin de la tabla{% endif %}</div></div>
-<script>const sentinel=document.getElementById('infinite-status');let loading=false;const observer=new IntersectionObserver(async entries=>{if(!entries[0].isIntersecting||loading||!sentinel.dataset.next)return;loading=true;sentinel.textContent='Cargando…';const url=new URL(location.href);url.searchParams.set('page',sentinel.dataset.next);url.searchParams.set('fragment','1');try{const response=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});const html=await response.text();const box=document.createElement('tbody');box.innerHTML=html;while(box.firstChild)document.getElementById('records-body').appendChild(box.firstChild);sentinel.dataset.next=response.headers.get('X-Next-Page')||'';sentinel.textContent=sentinel.dataset.next?'Desplázate para cargar más objetos…':'Fin de la tabla';}finally{loading=false}}, {rootMargin:'500px'});observer.observe(sentinel);</script>
+
+<div id="recordModal" class="record-modal" aria-hidden="true">
+ <div class="record-modal-box">
+  <div class="record-modal-head"><div><h2 id="recordTitle" style="margin:0">Objeto</h2><div id="recordStatus" class="muted"></div></div><button type="button" class="record-modal-close" id="recordClose" aria-label="Cerrar">×</button></div>
+  <div id="recordFields" class="record-fields"></div>
+  <div id="reserveUnavailable" class="reserve-unavailable" hidden>Este objeto no está disponible para reservar.</div>
+  <form id="reserveForm" class="reserve-box" method="post" hidden>
+   {% csrf_token %}
+   <input type="hidden" name="next" id="reserveNext">
+   <h3>Reservar objeto</h3>
+   <label for="reserveDestination">Destino</label>
+   <select id="reserveDestination" name="destination" required>
+    <option value="">Selecciona un destino</option>
+    {% for zone in reservation_zones %}<option value="{{zone.code}}">{{zone.name}}</option>{% endfor %}
+   </select>
+   <label for="reserveSN">SN de la máquina de destino</label>
+   <input id="reserveSN" name="destination_sn" maxlength="180" required autocomplete="off">
+   <div class="responsive-buttons" style="margin-top:14px"><button class="btn" type="submit">Reservar</button><button class="btn secondary" type="button" id="reserveCancel">Cancelar</button></div>
+  </form>
+ </div>
+</div>
+
+<script>
+const sentinel=document.getElementById('infinite-status');let loading=false;const observer=new IntersectionObserver(async entries=>{if(!entries[0].isIntersecting||loading||!sentinel.dataset.next)return;loading=true;sentinel.textContent='Cargando…';const url=new URL(location.href);url.searchParams.set('page',sentinel.dataset.next);url.searchParams.set('fragment','1');try{const response=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});const html=await response.text();const box=document.createElement('tbody');box.innerHTML=html;while(box.firstChild)document.getElementById('records-body').appendChild(box.firstChild);sentinel.dataset.next=response.headers.get('X-Next-Page')||'';sentinel.textContent=sentinel.dataset.next?'Desplázate para cargar más objetos…':'Fin de la tabla';}finally{loading=false}}, {rootMargin:'500px'});observer.observe(sentinel);
+
+const modal=document.getElementById('recordModal'),fieldsBox=document.getElementById('recordFields'),reserveForm=document.getElementById('reserveForm'),reserveUnavailable=document.getElementById('reserveUnavailable');
+function closeRecordModal(){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');reserveForm.hidden=true;reserveUnavailable.hidden=true;document.getElementById('reserveSN').value='';}
+async function openRecordModal(url){
+ try{
+  const response=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});
+  if(!response.ok){throw new Error(await response.text()||'No se pudo consultar el objeto.');}
+  const data=await response.json();
+  document.getElementById('recordTitle').textContent=(data.table||'Objeto')+' · '+(data.id||'');
+  document.getElementById('recordStatus').textContent=data.status||'';
+  fieldsBox.innerHTML='';
+  (data.fields||[]).forEach(field=>{const div=document.createElement('div');div.className='record-field';const strong=document.createElement('strong');strong.textContent=field.name||'';const value=document.createElement('span');value.textContent=field.value==null?'':String(field.value);div.append(strong,value);fieldsBox.appendChild(div);});
+  reserveForm.action=data.reserve_url||'';document.getElementById('reserveNext').value=location.pathname+location.search;
+  reserveForm.hidden=!data.can_reserve;reserveUnavailable.hidden=!!data.can_reserve;
+  modal.classList.add('open');modal.setAttribute('aria-hidden','false');
+ }catch(error){alert(error.message||'No se pudo consultar el objeto.');}
+}
+document.addEventListener('click',event=>{const row=event.target.closest('.record-row[data-record-url]');if(row&&!event.target.closest('a,button,input,select,textarea,form')){openRecordModal(row.dataset.recordUrl);}});
+document.getElementById('recordClose').onclick=closeRecordModal;document.getElementById('reserveCancel').onclick=closeRecordModal;modal.addEventListener('click',e=>{if(e.target===modal)closeRecordModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeRecordModal();});
+</script>
 {% endblock %}
