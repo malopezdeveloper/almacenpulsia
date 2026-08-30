@@ -14,6 +14,13 @@ class InventoryConfig(AppConfig):
   blocked={'makemigrations','migrate','collectstatic','test','check','shell','createsuperuser'}
   if any(arg in blocked for arg in sys.argv[1:2]):return
   try:
+   from .stock_service import ensure_permanent_stock_order
+   ensure_permanent_stock_order()
+  except Exception:
+   # STOCK también se crea por migración. Un fallo aquí no debe impedir arrancar;
+   # el siguiente inicio volverá a intentar autocurarlo.
+   pass
+  try:
    from .backup_scheduler import start_scheduler
    start_scheduler()
   except Exception:
