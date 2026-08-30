@@ -45,6 +45,12 @@ def internal_delete(request, kind, pk):
     obj = get_object_or_404(model, pk=pk)
     label = str(obj)
 
+    # STOCK es un pedido técnico permanente del sistema. No puede eliminarse
+    # ni siquiera por el Gestor y tampoco debe depender de la protección UI.
+    if kind == "pedidos" and isinstance(obj, CustomerOrder) and obj.name.strip().casefold() == "stock" and obj.customer_id is None:
+        messages.error(request, "STOCK es un pedido permanente del sistema y no se puede eliminar.")
+        return redirect("internal_table", kind=kind)
+
     try:
         with transaction.atomic():
             obj.delete()
