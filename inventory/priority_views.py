@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, transaction, models
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -83,4 +83,33 @@ def move_unit_to_stock(request, unit_pk):
     messages.success(request, f'{unit.serial_number} retirada de {source_name} y enviada a STOCK.'); return redirect('order_detail', pk=source_id)
 
 
-from django.db import models
+@login_required
+@require_POST
+def move_unit_from_stock(request, unit_pk):
+    """Mueve una unidad de STOCK a un pedido abierto conservando la misma unidad física y trazabilidad."""
+    if not _can_manage(request.user):
+        return HttpResponseForbidden('Sólo Gestor y Administradores pueden asignar unidades de STOCK a pedidos.')
+    stock = stock_order()
+    if stock is None:
+        messages.error(request, 'No existe el pedido permanente STOCK.')
+        return redirect('internal_table', kind='pedidos')
+    unit = get_object_or_404(OrderUnit.objects.select_related('order', 'physical_unit'), pk=unit_pk, order=stock)
+    destination = get_object_or_404(CustomerOrder, pk=request.POST.get('order_id'), status='open')
+    if destination.pk == stock.pk or destination.name.casefold() == 'stock':
+        messages.error(request, 'Selecciona un pedido de destino distinto de STOCK.')
+        return redirect('order_detail', pk=stock.pk)
+    try:
+        with transaction.atomic():
+            unit.order = destination
+            unit.save(update_fields=['order'])
+            AuditLog.objects.create(
+                user=request.user,
+                action='stock_unit_assigned_to_order',
+                object_type='OrderUnit', object_id=str(unit.pk),
+                details={'serial_number': unit.serial_number, 'from_order_id': stock.pk, 'from_order': 'STOCK',
+                         'to_order_id': destination.pk, 'to_order': destination.name})
+    except IntegrityError:
+        messages.error(request, f'{unit.serial_number} ya tiene un ciclo en {destination.name} y no se puede duplicar.')
+        return redirect('order_detail', pk=stock.pk)
+    messages.success(request, f'{unit.serial_number} asignada desde STOCK a {destination.name}.')
+    return redirect('order_detail', pk=stock.pk)
