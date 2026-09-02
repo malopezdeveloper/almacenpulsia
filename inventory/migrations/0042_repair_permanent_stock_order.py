@@ -18,9 +18,13 @@ def repair_stock_order(apps, schema_editor):
             stock.save(update_fields=changed)
         return
 
+    # En una base PostgreSQL nueva las migraciones se ejecutan antes de importar
+    # los datos/usuarios de la instalación anterior. No es un error: STOCK se
+    # importará con el fixture y, en instalaciones realmente vacías, podrá
+    # crearse posteriormente cuando ya exista el primer usuario.
     creator_id = User.objects.order_by('pk').values_list('pk', flat=True).first()
     if creator_id is None:
-        raise RuntimeError('No se puede crear STOCK porque todavía no existe ningún usuario del sistema.')
+        return
 
     CustomerOrder.objects.create(
         name='STOCK', customer_id=None,
