@@ -8,11 +8,6 @@ class InventoryConfig(AppConfig):
   # Importar los módulos de modelos del dominio para que Django los registre.
   from . import order_models,responsibility_models,component_flow_models,unit_workflow_models,priority_models
   from . import component_catalog_signals
-  # La columna customer admite NULL exclusivamente para el pedido técnico STOCK.
-  # 0041 ya hizo nullable la columna física; alineamos aquí el metadato runtime
-  # para que select_related('customer') use LEFT OUTER JOIN y no oculte STOCK.
-  order_models.CustomerOrder._meta.get_field('customer').null=True
-  order_models.CustomerOrder._meta.get_field('customer').blank=True
   from .db_utils import install_sqlite_pragmas
   install_sqlite_pragmas()
   try:
