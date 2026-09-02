@@ -16,10 +16,12 @@ ROOT_URLCONF="config.urls"
 TEMPLATES=[{"BACKEND":"django.template.backends.django.DjangoTemplates","DIRS":[],"APP_DIRS":True,"OPTIONS":{"context_processors":["django.template.context_processors.request","django.contrib.auth.context_processors.auth","django.contrib.messages.context_processors.messages","inventory.context_processors.inventory_navigation"]}}]
 WSGI_APPLICATION="config.wsgi.application"
 db=os.getenv("DATABASE_URL","").strip()
-if not (db.startswith("postgresql://") or db.startswith("postgres://")):
- raise RuntimeError("PostgreSQL es obligatorio. Configure DATABASE_URL=postgresql://usuario:clave@host:5432/base")
-u=urlparse(db)
-DATABASES={"default":{"ENGINE":"django.db.backends.postgresql","NAME":unquote(u.path[1:]),"USER":unquote(u.username or ''),"PASSWORD":unquote(u.password or ''),"HOST":u.hostname or '127.0.0.1',"PORT":u.port or 5432,"CONN_MAX_AGE":60,"OPTIONS":{"connect_timeout":10}}}
+if db.startswith("postgresql://") or db.startswith("postgres://"):
+ u=urlparse(db);DATABASES={"default":{"ENGINE":"django.db.backends.postgresql","NAME":unquote(u.path[1:]),"USER":unquote(u.username or ''),"PASSWORD":unquote(u.password or ''),"HOST":u.hostname or '127.0.0.1',"PORT":u.port or 5432,"CONN_MAX_AGE":60,"OPTIONS":{"connect_timeout":10}}}
+elif os.getenv("PULSIA_SQLITE_MIGRATION","0")=="1":
+ DATABASES={"default":{"ENGINE":"django.db.backends.sqlite3","NAME":BASE_DIR/"data"/"inventario.sqlite3","OPTIONS":{"timeout":10}}}
+else:
+ raise RuntimeError("PostgreSQL es obligatorio. Ejecute la actualización programa y base de datos para migrar automáticamente la instalación SQLite.")
 AUTH_PASSWORD_VALIDATORS=[{"NAME":"django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},{"NAME":"django.contrib.auth.password_validation.MinimumLengthValidator","OPTIONS":{"min_length":8}},{"NAME":"django.contrib.auth.password_validation.CommonPasswordValidator"}]
 LANGUAGE_CODE="es-es";TIME_ZONE="Europe/Madrid";USE_I18N=True;USE_TZ=True
 STATIC_URL="static/";STATIC_ROOT=BASE_DIR/"staticfiles";DEFAULT_AUTO_FIELD="django.db.models.BigAutoField"
