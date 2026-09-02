@@ -28,7 +28,6 @@ def _component_for_record(record):
  linked=Component.objects.filter(inventory_record=record).first()
  if linked:return linked
  return Component.objects.create(component_type=record.table.name,reference=_record_reference(record),inventory_record=record,status='active')
-
 @login_required
 def warehouse_table_menu(request,unit_pk):
  if not _can_reserve(request.user):return _deny()
@@ -70,10 +69,9 @@ def reserve_inventory_record(request,unit_pk,record_pk):
   if not _available(record):messages.error(request,'Este objeto ya no está disponible.');return redirect('warehouse_inventory_table',unit_pk=unit.pk,slug=record.table.slug)
   component=_component_for_record(record);catalog=_is_catalog(record)
   if not catalog and component.status!='active':messages.error(request,'Este componente ya está reservado o instalado.');return redirect('warehouse_inventory_table',unit_pk=unit.pk,slug=record.table.slug)
-  reservation=ComponentReservation.objects.create(unit=unit,component=component,technician=request.user,unit_serial_number=unit.serial_number,observations='Reserva directa desde inventario/bodega')
-  ReservationAllocation.objects.create(reservation=reservation,order=unit.order,source='order' if catalog else 'warehouse',authorization=None)
+  reservation=ComponentReservation.objects.create(unit=unit,component=component,technician=request.user,unit_serial_number=unit.serial_number,observations='Reserva directa desde inventario/bodega');ReservationAllocation.objects.create(reservation=reservation,order=unit.order,source='order' if catalog else 'warehouse',authorization=None)
   if catalog:
-   data=dict(record.data or {});remaining=_quantity(record)-1;data['quantity']=str(remaining);record.data=data;record.status='available' if remaining>0 else 'delivered';component.status='active' if remaining>0 else 'low';component.save(update_fields=['status']);record.save(update_fields=['data','status','updated_at']);reason=f'1 unidad reservada para {unit.serial_number}. Quedan {remaining}.'
+   data=dict(record.data or {});remaining=_quantity(record)-1;data['quantity']=str(remaining);record.data=data;record.status='available' if remaining>0 else 'reserved';component.status='active' if remaining>0 else 'low';component.save(update_fields=['status']);record.save(update_fields=['data','status','updated_at']);reason=f'1 unidad reservada para {unit.serial_number}. Quedan {remaining}.'
   else:
    component.status='reserved';component.save(update_fields=['status']);record.status='reserved';record.current_sn=unit.serial_number;record.current_technician=request.user.get_username();record.save(update_fields=['status','current_sn','current_technician','updated_at']);reason=f'Reservado para unidad {unit.serial_number}'
   RecordMovement.objects.create(record=record,movement_type='reserve',technician_name=request.user.get_username(),destination_sn=unit.serial_number,reason=reason,registered_by=request.user);AuditLog.objects.create(user=request.user,action='component_reserved_for_unit',object_type='InventoryRecord',object_id=str(record.pk),details={'unit_id':unit.pk,'serial_number':unit.serial_number,'order_id':unit.order_id,'table':record.table.name,'record_id':record.internal_id,'quantity_reserved':1})
