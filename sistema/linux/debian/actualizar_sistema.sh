@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-MODE="${1:-}"; APP_ROOT="${PULSIA_APP_ROOT:-/almacen}"; APP_SERVICE="pulsia-inventario"; CADDY_SERVICE="pulsia-inventario-caddy"; STAMP="$(date +%Y%m%d_%H%M%S)"; UPDATE_STARTED=0
-info(){ echo "[INFO] $*"; }; ok(){ echo "[OK] $*"; }; warn(){ echo "[AVISO] $*"; }; fail(){ echo "[ERROR] $*" >&2; exit 1; }
-[[ "$MODE" == solo-programa || "$MODE" == programa-y-bd || "$MODE" == estructural ]] || fail "Modo de actualización no válido."; [[ ${EUID} -eq 0 ]] || exec sudo -E "$0" "$MODE"
-SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"; [[ -f "$SOURCE_ROOT/manage.py" && -d "$SOURCE_ROOT/inventory" && -d "$SOURCE_ROOT/config" ]] || fail "Paquete PULSIA no válido."; [[ -d "$APP_ROOT" && -f "$APP_ROOT/manage.py" ]] || fail "Servidor no encontrado en $APP_ROOT."
-[[ "$(readlink -f "$SOURCE_ROOT")" != "$(readlink -f "$APP_ROOT")" ]] || { ok "Este script pertenece a la propia instalación."; exit 0; }
-command -v rsync >/dev/null || fail "Se necesita rsync."; RSYNC_EXCLUDES=(--exclude='.venv/' --exclude='.env' --exclude='data/' --exclude='backups/' --exclude='logs/' --exclude='certs/' --exclude='.git/' --exclude='__pycache__/' --exclude='*.pyc'); CHANGES="$(rsync -ani --delete "${RSYNC_EXCLUDES[@]}" "$SOURCE_ROOT/" "$APP_ROOT/")"; [[ -n "$CHANGES" ]] || { ok "PULSIA Almacén ya está actualizado."; exit 0; }
-BACKUP_ROOT="$APP_ROOT/backups/actualizaciones"; BACKUP_DIR="$BACKUP_ROOT/$STAMP"; DB_PATH="$APP_ROOT/data/inventario.sqlite3"; ENV_PATH="$APP_ROOT/.env"; CODE_BACKUP="$BACKUP_DIR/codigo_previo.tar.gz"; DB_BACKUP="$BACKUP_DIR/inventario.sqlite3"; ENV_BACKUP="$BACKUP_DIR/.env"; mkdir -p "$BACKUP_DIR"; chmod 0700 "$BACKUP_DIR"
-rollback(){ local rc=$?; trap - ERR; echo "[ERROR] Fallo. Restaurando backup..." >&2; [[ -f "$CODE_BACKUP" ]] && { find "$APP_ROOT" -mindepth 1 -maxdepth 1 ! -name '.venv' ! -name '.env' ! -name data ! -name backups ! -name logs ! -name certs ! -name '.git' -exec rm -rf {} + 2>/dev/null || true; tar -xzf "$CODE_BACKUP" -C "$APP_ROOT" || true; }; [[ -f "$DB_BACKUP" ]] && cp -a "$DB_BACKUP" "$DB_PATH" || true; [[ -f "$ENV_BACKUP" ]] && cp -a "$ENV_BACKUP" "$ENV_PATH" || true; systemctl restart "$APP_SERVICE" >/dev/null 2>&1 || true; systemctl restart "$CADDY_SERVICE" >/dev/null 2>&1 || true; exit "$rc"; }; trap rollback ERR
-systemctl stop "$CADDY_SERVICE" 2>/dev/null || true; systemctl stop "$APP_SERVICE" 2>/dev/null || true; tar -czf "$CODE_BACKUP" -C "$APP_ROOT" --exclude='./.venv' --exclude='./.env' --exclude='./data' --exclude='./backups' --exclude='./logs' --exclude='./certs' --exclude='./.git' .; [[ -f "$DB_PATH" ]] && cp -a "$DB_PATH" "$DB_BACKUP"; [[ -f "$ENV_PATH" ]] && cp -a "$ENV_PATH" "$ENV_BACKUP"; UPDATE_STARTED=1
-info "Sincronizando código y eliminando archivos obsoletos..."; rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$SOURCE_ROOT/" "$APP_ROOT/"; find "$APP_ROOT/sistema" -type f -name '*.sh' -exec sed -i 's/\r$//' {} + -exec chmod 0750 {} + 2>/dev/null || true
-PYTHON="$APP_ROOT/.venv/bin/python"; PIP="$APP_ROOT/.venv/bin/pip"; [[ -x "$PYTHON" ]] || fail "No existe Python virtual."; "$PIP" install -r "$APP_ROOT/requirements/servidor.txt"
-# Una instalación antigua SQLite se convierte antes de ejecutar cualquier comando Django normal.
-CURRENT_DB="$(grep '^DATABASE_URL=' "$ENV_PATH" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
-if [[ "$MODE" != solo-programa && -f "$DB_PATH" && "$CURRENT_DB" != postgresql://* && "$CURRENT_DB" != postgres://* ]]; then
- info "SQLite detectado: instalando PostgreSQL y migrando todos los datos..."; PULSIA_APP_ROOT="$APP_ROOT" "$APP_ROOT/sistema/linux/debian/migrar_sqlite_a_postgresql.sh"; ok "Datos migrados a PostgreSQL."
+MODE="${1:-}"; APP_ROOT="${PULSIA_APP_ROOT:-/almacen}"; APP_SERVICE="pulsia-inventario"; CADDY_SERVICE="pulsia-inventario-caddy"; STAMP="$(date +%Y%m%d_%H%M%S)"
+info(){ echo "[INFO] $*"; }; ok(){ echo "[OK] $*"; }; fail(){ echo "[ERROR] $*" >&2; exit 1; }
+[[ "$MODE" == solo-programa || "$MODE" == programa-y-bd || "$MODE" == estructural ]] || fail "Modo no válido."; [[ $EUID -eq 0 ]] || exec sudo -E "$0" "$MODE"
+SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"; [[ -f "$APP_ROOT/manage.py" ]] || fail "Servidor no encontrado en $APP_ROOT"; [[ "$(readlink -f "$SOURCE_ROOT")" != "$(readlink -f "$APP_ROOT")" ]] || exit 0
+command -v rsync >/dev/null || fail "Se necesita rsync."; EX=(--exclude='.venv/' --exclude='.env' --exclude='data/' --exclude='backups/' --exclude='logs/' --exclude='certs/' --exclude='.git/' --exclude='__pycache__/' --exclude='*.pyc')
+BACKUP="$APP_ROOT/backups/actualizaciones/$STAMP"; mkdir -p "$BACKUP"; chmod 0700 "$BACKUP"; cp -a "$APP_ROOT/.env" "$BACKUP/.env" 2>/dev/null || true; cp -a "$APP_ROOT/data/inventario.sqlite3" "$BACKUP/inventario.sqlite3" 2>/dev/null || true; tar -czf "$BACKUP/codigo_previo.tar.gz" -C "$APP_ROOT" --exclude='.venv' --exclude='.env' --exclude='data' --exclude='backups' --exclude='logs' --exclude='certs' --exclude='.git' .
+rollback(){ rc=$?; trap - ERR; echo '[ERROR] Fallo. Restaurando backup...' >&2; [[ -f "$BACKUP/.env" ]] && cp -a "$BACKUP/.env" "$APP_ROOT/.env"; [[ -f "$BACKUP/inventario.sqlite3" ]] && cp -a "$BACKUP/inventario.sqlite3" "$APP_ROOT/data/inventario.sqlite3"; systemctl restart "$APP_SERVICE" 2>/dev/null || true; exit $rc; }; trap rollback ERR
+systemctl stop "$APP_SERVICE" 2>/dev/null || true; info "Sincronizando código y eliminando archivos obsoletos..."; rsync -a --delete "${EX[@]}" "$SOURCE_ROOT/" "$APP_ROOT/"; find "$APP_ROOT/sistema" -type f -name '*.sh' -exec sed -i 's/\r$//' {} +; find "$APP_ROOT/sistema" -type f -name '*.sh' -exec chmod 0750 {} +
+PY="$APP_ROOT/.venv/bin/python"; PIP="$APP_ROOT/.venv/bin/pip"; "$PIP" install -r "$APP_ROOT/requirements/servidor.txt"
+# DATABASE_URL heredada del shell no puede imponerse sobre el .env del servidor.
+unset DATABASE_URL || true
+ENV_DB="$(sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*//p' "$APP_ROOT/.env" | tail -1 | tr -d '\r' || true)"
+info "Motor configurado antes de actualizar: ${ENV_DB%%:*}"
+if [[ "$MODE" != solo-programa && "$ENV_DB" != postgresql://* && "$ENV_DB" != postgres://* ]]; then
+ [[ -f "$APP_ROOT/data/inventario.sqlite3" ]] || fail "La instalación no apunta a PostgreSQL y no encuentro la SQLite original. No se tocarán los datos."
+ info "SQLite detectado: instalando PostgreSQL y migrando la base completa..."
+ PULSIA_APP_ROOT="$APP_ROOT" "$APP_ROOT/sistema/linux/debian/migrar_sqlite_a_postgresql.sh"
+ unset DATABASE_URL || true
+ ok "Conversión SQLite → PostgreSQL terminada."
 fi
-cd "$APP_ROOT"; if [[ "$MODE" != solo-programa ]]; then "$PYTHON" manage.py migrate --noinput; else "$PYTHON" manage.py showmigrations --plan | grep -q '\[ \]' && warn "Hay migraciones pendientes." || true; fi; "$PYTHON" manage.py check; systemctl daemon-reload; systemctl restart "$APP_SERVICE"; systemctl restart "$CADDY_SERVICE"; systemctl is-active --quiet "$APP_SERVICE" || fail "$APP_SERVICE no está activo"; trap - ERR; ok "Actualización completada correctamente."; echo "Backup de recuperación: $BACKUP_DIR"
+cd "$APP_ROOT"; "$PY" manage.py migrate --noinput; "$PY" manage.py check; systemctl daemon-reload; systemctl restart "$APP_SERVICE"; systemctl restart "$CADDY_SERVICE" 2>/dev/null || true; systemctl is-active --quiet "$APP_SERVICE" || fail "Servicio no activo"; trap - ERR; ok "Actualización completada correctamente."; echo "Backup: $BACKUP"
