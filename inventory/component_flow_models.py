@@ -1,7 +1,32 @@
 from django.conf import settings
 from django.db import models
 
-from .order_models import CustomerOrder, OrderUnit, ComponentType, ComponentReservation
+from .order_models import CustomerOrder, OrderUnit, ComponentType, ComponentReservation, Component
+from .models import InventoryRecord
+
+
+class Installation(models.Model):
+    """Apunte inmutable del acontecimiento de instalación de un componente."""
+    SOURCE = [('warehouse', 'Bodega / almacén'), ('order', 'Pedido'), ('board', 'Pizarra'), ('reservation', 'Reserva')]
+    reservation = models.OneToOneField(ComponentReservation, on_delete=models.PROTECT, null=True, blank=True, related_name='installation_event')
+    unit = models.ForeignKey(OrderUnit, on_delete=models.PROTECT, related_name='installation_events')
+    component = models.ForeignKey(Component, on_delete=models.PROTECT, related_name='installation_events')
+    inventory_record = models.ForeignKey(InventoryRecord, on_delete=models.PROTECT, null=True, blank=True, related_name='installation_events')
+    technician = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='signed_installations')
+    installed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    source = models.CharField(max_length=16, choices=SOURCE, default='reservation', db_index=True)
+    unit_serial_number = models.CharField(max_length=180, db_index=True)
+    component_reference = models.CharField(max_length=200, blank=True, db_index=True)
+    component_type = models.CharField(max_length=160, blank=True, db_index=True)
+    inventory_table_name = models.CharField(max_length=120, blank=True)
+    inventory_internal_id = models.CharField(max_length=160, blank=True, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ('-installed_at', '-pk')
+
+    def __str__(self):
+        return f'{self.pk} · {self.unit_serial_number} · {self.component_reference or self.component_type}'
 
 
 class OrderComponentAuthorization(models.Model):
