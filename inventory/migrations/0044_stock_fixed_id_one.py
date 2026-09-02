@@ -10,8 +10,11 @@ def normalize_stock(apps, schema_editor):
         .order_by('pk')
         .first()
     )
+    # Durante SQLite -> PostgreSQL las migraciones de esquema se ejecutan antes
+    # de cargar el fixture. En ese momento la base nueva está legítimamente vacía
+    # y STOCK llegará después junto con los datos históricos.
     if stock is None:
-        raise RuntimeError('No existe el pedido permanente STOCK.')
+        return
 
     changed = []
     if stock.name != 'STOCK':
