@@ -2,7 +2,21 @@ from django.conf import settings
 from django.db import models
 
 from .order_models import CustomerOrder, OrderUnit, ComponentType, ComponentReservation, Component
-from .models import InventoryRecord
+from .models import InventoryRecord, InventoryTable
+
+
+class ComponentCatalog(models.Model):
+    component_type = models.OneToOneField(ComponentType, on_delete=models.CASCADE, related_name='catalog')
+    inventory_table = models.OneToOneField(InventoryTable, on_delete=models.PROTECT, related_name='component_catalog')
+    active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='component_catalogs_created')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('component_type__name',)
+
+    def __str__(self):
+        return self.component_type.name
 
 
 class Installation(models.Model):
