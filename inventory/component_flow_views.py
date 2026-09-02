@@ -49,8 +49,17 @@ def reserve_physical_component(request,unit_pk,component_pk,source):
 def legacy_reserve_component(request,component_pk):
  if not _can_reserve(request.user):return _deny()
  unit_id=request.POST.get('unit')
- if not unit_id:messages.error(request,'Selecciona primero una unidad.');return redirect('internal_table',kind='componentes')
- return redirect('reservation_source',unit_pk=get_object_or_404(OrderUnit,pk=unit_id).pk)
+ if not unit_id:messages.error(request,'Selecciona primero una unidad.');return redirect('internal_detail',kind='componentes',pk=component_pk)
+ with transaction.atomic():
+  unit=get_object_or_404(OrderUnit.objects.select_for_update().select_related('order'),pk=unit_id)
+  component=get_object_or_404(Component.objects.select_for_update(),pk=component_pk)
+  if not _require_open(unit):messages.error(request,'El pedido está cerrado.');return redirect('internal_detail',kind='componentes',pk=component.pk)
+  if component.status!='active':messages.error(request,'Este componente ya no está disponible.');return redirect('internal_detail',kind='componentes',pk=component.pk)
+  reservation=ComponentReservation.objects.create(unit=unit,component=component,technician=request.user,unit_serial_number=unit.serial_number,observations='Reserva directa desde Componentes')
+  ReservationAllocation.objects.create(reservation=reservation,order=unit.order,source='order',authorization=None)
+  component.status='reserved';component.save(update_fields=['status'])
+ messages.success(request,f'{component} reservado para {unit.serial_number}.')
+ return redirect('unit_detail',pk=unit.pk)
 @login_required
 @require_POST
 def request_component_increase(request,unit_pk):
