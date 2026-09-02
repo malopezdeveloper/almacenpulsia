@@ -15,4 +15,13 @@ if [[ "$MODE" != solo-programa && "$ENV_DB" != postgresql://* && "$ENV_DB" != po
  [[ -f "$DB_PATH" ]] || fail "No se encuentra la base SQLite original."; info "SQLite detectado: instalando PostgreSQL y migrando la base completa..."
  PULSIA_APP_ROOT="$APP_ROOT" bash "$APP_ROOT/sistema/linux/debian/migrar_sqlite_a_postgresql.sh"; unset DATABASE_URL || true; ok "Conversión SQLite → PostgreSQL terminada."
 fi
-cd "$APP_ROOT"; if [[ "$MODE" != solo-programa ]]; then "$PY" manage.py migrate --noinput; else "$PY" manage.py showmigrations --plan | grep -q '\[ \]' && warn "Hay migraciones pendientes." || true; fi; "$PY" manage.py check; systemctl daemon-reload; systemctl restart "$APP_SERVICE"; systemctl restart "$CADDY_SERVICE" 2>/dev/null || true; systemctl is-active --quiet "$APP_SERVICE" || fail "Servicio no activo"; trap - ERR; ok "Actualización completada correctamente."; echo "Backup: $BACKUP"
+cd "$APP_ROOT"
+if [[ "$MODE" != solo-programa ]]; then
+ "$PY" manage.py migrate --noinput
+ # Una actualización no se considera válida si el código contiene cambios de
+ # modelo que no estén representados por una migración versionada.
+ "$PY" manage.py makemigrations --check --dry-run
+else
+ "$PY" manage.py showmigrations --plan | grep -q '\[ \]' && warn "Hay migraciones pendientes." || true
+fi
+"$PY" manage.py check; systemctl daemon-reload; systemctl restart "$APP_SERVICE"; systemctl restart "$CADDY_SERVICE" 2>/dev/null || true; systemctl is-active --quiet "$APP_SERVICE" || fail "Servicio no activo"; trap - ERR; ok "Actualización completada correctamente."; echo "Backup: $BACKUP"
