@@ -69,9 +69,15 @@ class ComponentReservation(models.Model):
  def install(self,user):
   if self.status!='active':return self.repair
   from .models import RecordMovement
+  from .component_flow_models import Installation
   with transaction.atomic():
    repair=Repair.objects.create(unit=self.unit,repair_type=self.component.component_type,component_type=self.component.component_kind,created_by=user,observations=self.observations);self.repair=repair;self.installed_by=user;self.installed_at=timezone.now();self.status='installed';self.save(update_fields=['repair','installed_by','installed_at','status']);self.component.status='installed';self.component.save(update_fields=['status'])
    record=self.component.inventory_record
+   source='reservation'
+   try:
+    if hasattr(self,'allocation'):source=self.allocation.source
+   except Exception:pass
+   Installation.objects.create(reservation=self,unit=self.unit,component=self.component,inventory_record=record,technician=user,source=source,unit_serial_number=self.unit_serial_number,component_reference=self.component.reference,component_type=self.component.component_type,inventory_table_name=record.table.name if record else '',inventory_internal_id=record.internal_id if record else '',metadata={'reservation_id':self.pk,'reserved_by_id':self.technician_id,'repair_id':repair.pk,'order_id':self.unit.order_id})
    if record:
     record.status='assigned';record.current_sn=self.unit_serial_number;record.current_technician=user.get_username();data=dict(record.data or {})
     for field in record.table.inventory_fields.all():
