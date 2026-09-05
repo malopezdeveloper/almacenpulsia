@@ -37,7 +37,7 @@ def start_unit(request):
  sn=(request.POST.get('serial_number') or '').strip();context=(request.POST.get('work_order') or 'stock').strip()
  if not sn:return redirect('production_board')
  origin=get_object_or_404(ProductionZone,pk=request.POST.get('origin_zone') or request.POST.get('zone'),is_active=True)
- order=_stock() if context=='stock' else None
+ stock_order=_stock();order=stock_order if context=='stock' else None
  if context!='stock':
   try:order=CustomerOrder.objects.get(pk=int(context),status='open')
   except (TypeError,ValueError,CustomerOrder.DoesNotExist):messages.error(request,'Selecciona un pedido activo o STOCK.');return redirect('production_board')
@@ -46,6 +46,13 @@ def start_unit(request):
  physical=PhysicalUnit.objects.filter(serial_number__iexact=sn).first()
  local_cycle=(OrderUnit.objects.select_related('order','physical_unit').filter(physical_unit=physical).order_by('-imported_at','-pk').first()) if physical else None
  has_warranty_history=bool(physical and OrderUnit.objects.filter(physical_unit=physical,order__name__iexact='GARANTÍAS').exists()) or bool(physical and OrderUnit.objects.filter(physical_unit=physical,order__name__iexact='GARANTIAS').exists())
+
+ # STOCK (pedido/contexto) significa exclusivamente "sin pedido de cliente".
+ # No tiene ninguna relación con la zona física Stock. Una máquina que ya pertenece
+ # a un pedido conserva ese pedido aunque físicamente esté, entre o salga de la zona Stock.
+ if context=='stock' and local_cycle and stock_order and local_cycle.order_id!=stock_order.pk:
+  messages.error(request,f'{sn} pertenece al pedido {local_cycle.order.name}. La zona física Stock no cambia el pedido: selecciona {local_cycle.order.name} para ficharla.')
+  return redirect('production_board')
 
  # Garantías es un circuito protegido. Un técnico normal sólo puede fichar en la
  # zona Garantías una unidad que ya pertenece al pedido GARANTÍAS. Responsable y
@@ -58,8 +65,6 @@ def start_unit(request):
   if not current_is_warranty and not privileged:
    messages.error(request,'Sólo pueden entrar en Garantías unidades del pedido GARANTÍAS. El Responsable de Garantías o el Gestor pueden realizar una incorporación excepcional.')
    return redirect('production_board')
-  # Entrar físicamente en Garantías siempre trabaja sobre el pedido permanente.
-  # Si es una incorporación privilegiada se crea un nuevo ciclo conservando la procedencia.
   order=warranty;context=str(warranty.pk)
 
  row=None if (physical or local_cycle) else _aiken(sn);vals={f:_clean((row or {}).get(f)) for f in UNIT_FIELDS}
@@ -93,11 +98,12 @@ def start_unit(request):
    return redirect('production_board')
   if location and not location.intervention.finished_at:_close(location.intervention,now,origin)
   for old in UnitIntervention.objects.select_for_update().filter(unit__physical_unit=physical,finished_at__isnull=True):_close(old,now,origin)
-  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row),'lookup_source':'local' if not row else 'aiken','work_context':'warranty' if _is_warranty_order(order) else ('stock' if context=='stock' else 'order'),'selected_order_id':None if context=='stock' else order.pk,'selected_order':'STOCK' if context=='stock' else order.name,'warranty_cycle':_is_warranty_order(order),'had_warranty_history':has_warranty_history}
+  is_stock_context=bool(stock_order and order.pk==stock_order.pk)
+  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row),'lookup_source':'local' if not row else 'aiken','work_context':'warranty' if _is_warranty_order(order) else ('stock' if is_stock_context else 'order'),'selected_order_id':None if is_stock_context else order.pk,'selected_order':'STOCK' if is_stock_context else order.name,'physical_zone_id':origin.pk,'physical_zone':origin.name,'warranty_cycle':_is_warranty_order(order),'had_warranty_history':has_warranty_history}
   if pallet_origin:snapshot.update({'logistic_origin':'pallet',**pallet_origin})
   intervention=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source='aiken' if row else ('manual' if cycle_reason in ('first_intake','warranty_intake') else 'local'),source_snapshot=snapshot)
   PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':intervention,'worker':request.user,'entered_at':now})
-  AuditLog.objects.create(user=request.user,action='unit_picked_into_zone_stock',object_type='OrderUnit',object_id=str(unit.pk),details={'serial_number':sn,'zone_id':origin.pk,'zone':origin.name,'intervention_id':intervention.pk,'pallet_origin':pallet_origin,'lookup_source':'aiken' if row else 'local','warranty_cycle':_is_warranty_order(order)})
- if pallet_origin:messages.success(request,f'{sn} extraída de {pallet_origin["pallet_code"]} y fichada en {origin.name}.')
- else:messages.success(request,f'{sn} fichada en {origin.name} · ciclo actual: {order.name}.')
+  AuditLog.objects.create(user=request.user,action='unit_picked_into_zone_stock',object_type='OrderUnit',object_id=str(unit.pk),details={'serial_number':sn,'order_id':order.pk,'order':order.name,'work_context':'stock' if is_stock_context else 'order','zone_id':origin.pk,'zone':origin.name,'intervention_id':intervention.pk,'pallet_origin':pallet_origin,'lookup_source':'aiken' if row else 'local','warranty_cycle':_is_warranty_order(order)})
+ if pallet_origin:messages.success(request,f'{sn} extraída de {pallet_origin["pallet_code"]} y fichada en {origin.name} · pedido/contexto: {order.name}.')
+ else:messages.success(request,f'{sn} fichada en {origin.name} · pedido/contexto: {order.name}.')
  return redirect('production_board')
