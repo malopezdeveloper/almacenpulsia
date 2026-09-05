@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpResponseForbidden, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -67,12 +67,9 @@ def zone_stock(request):
 @login_required
 @require_POST
 def finish_unit_intervention(request, intervention_pk):
-    """Finaliza una fila de Mi Pizarra y deja la ubicación física en destino o, si no hay destino, en origen."""
+    """Finaliza una fila: destino normal, origen si vacío; Garantías sólo puede ser origen, nunca destino."""
     if not _can_work(request.user):
         return _finish_error(request, 'No tienes permiso para esta operación.', 403)
-
-    # Todas las salidas de este endpoint son JSON cuando lo llama Mi Pizarra. Así un
-    # fallo real nunca vuelve a quedar oculto detrás de «No se pudo terminar la unidad».
     try:
         with transaction.atomic():
             intervention = (UnitIntervention.objects.select_for_update()
@@ -94,6 +91,11 @@ def finish_unit_intervention(request, intervention_pk):
                 if destination.pk == intervention.zone_id:
                     destination = None
 
+            # Garantías es una zona de salida: sus técnicos pueden enviar equipos a
+            # cualquier destino permitido, pero ninguna otra zona puede enviar a Garantías.
+            if destination is not None and _zone_matches(destination, 'garant'):
+                return _finish_error(request, 'Garantías no admite equipos enviados desde otras zonas.', 403)
+
             if destination is not None and _zone_matches(destination, 'secadero') and not _zone_matches(intervention.zone, 'pintura'):
                 return _finish_error(request, 'Sólo Pintura puede enviar una unidad a Secadero.', 403)
 
@@ -104,18 +106,13 @@ def finish_unit_intervention(request, intervention_pk):
             intervention.destination_zone = destination
             intervention.save(update_fields=['finished_at', 'duration_seconds', 'destination_zone'])
 
-            # La localización existe durante el trabajo. Al finalizar no se borra:
-            # cambia al destino elegido; sin destino se conserva en la zona origen.
             location = (PhysicalUnitLocation.objects.select_for_update()
                         .filter(physical_unit_id=intervention.unit.physical_unit_id).first())
             if location is None:
                 location = PhysicalUnitLocation(
                     physical_unit_id=intervention.unit.physical_unit_id,
-                    unit=intervention.unit,
-                    zone=physical_zone,
-                    intervention=intervention,
-                    worker=request.user,
-                    entered_at=now,
+                    unit=intervention.unit, zone=physical_zone, intervention=intervention,
+                    worker=request.user, entered_at=now,
                 )
             else:
                 location.unit = intervention.unit
@@ -132,17 +129,13 @@ def finish_unit_intervention(request, intervention_pk):
                 details={
                     'serial_number': intervention.unit.serial_number,
                     'intervention_id': intervention.pk,
-                    'source_zone_id': intervention.zone_id,
-                    'source_zone': intervention.zone.name,
+                    'source_zone_id': intervention.zone_id, 'source_zone': intervention.zone.name,
                     'destination_zone_id': destination.pk if destination else None,
                     'destination_zone': destination.name if destination else None,
-                    'physical_zone_id': physical_zone.pk,
-                    'physical_zone': physical_zone.name,
+                    'physical_zone_id': physical_zone.pk, 'physical_zone': physical_zone.name,
                 },
             )
     except Exception as exc:
-        # En AJAX devolvemos el error concreto para poder detectar inmediatamente
-        # cualquier incompatibilidad del servidor durante las pruebas de fábrica.
         if _ajax(request):
             return JsonResponse({'ok': False, 'error': f'Error al finalizar: {exc.__class__.__name__}: {exc}'}, status=500)
         raise
@@ -188,7 +181,7 @@ def delete_unit_intervention(request, intervention_pk):
                 'source_snapshot': intervention.source_snapshot, 'removed_current_location': False,
             }
             serial = intervention.unit.serial_number
-            current_location = (PhysicalUnitLocation.objects.select_for_update().filter(intervention=intervention).first())
+            current_location = PhysicalUnitLocation.objects.select_for_update().filter(intervention=intervention).first()
             if current_location:
                 details['removed_current_location'] = True
                 details['physical_zone_id'] = current_location.zone_id
