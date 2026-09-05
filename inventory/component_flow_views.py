@@ -9,7 +9,7 @@ from .order_models import Component,ComponentReservation,ComponentType,OrderUnit
 from .component_flow_models import OrderComponentAuthorization,ComponentIncreaseRequest,ReservationAllocation
 from .permissions import user_has_permission
 
-def _can_reserve(user):return user.is_superuser or user_has_permission(user,'components.reserve') or user_has_permission(user,'repairs.manage') or user.is_staff
+def _can_reserve(user):return user.is_authenticated and not getattr(getattr(user,'inventory_profile',None),'is_guest',False)
 def _can_approve(user):return user.is_superuser or user_has_permission(user,'components.manage') or user_has_permission(user,'orders.manage')
 def _deny():return HttpResponseForbidden('No tienes permiso para realizar esta operación.')
 def _is_stock_order(order):return order.name.strip().casefold()=='stock'
@@ -34,8 +34,6 @@ def order_components(request,unit_pk):
  unit=get_object_or_404(OrderUnit.objects.select_related('order'),pk=unit_pk)
  if not _require_open(unit):return redirect('unit_detail',pk=unit.pk)
  return redirect('order_inventory_components',unit_pk=unit.pk)
-
-# Se conservan las rutas antiguas para compatibilidad con enlaces existentes.
 @login_required
 def authorized_physical_components(request,unit_pk,auth_pk):return redirect('order_inventory_components',unit_pk=unit_pk)
 @login_required
@@ -51,15 +49,11 @@ def legacy_reserve_component(request,component_pk):
  unit_id=request.POST.get('unit')
  if not unit_id:messages.error(request,'Selecciona primero una unidad.');return redirect('internal_detail',kind='componentes',pk=component_pk)
  with transaction.atomic():
-  unit=get_object_or_404(OrderUnit.objects.select_for_update().select_related('order'),pk=unit_id)
-  component=get_object_or_404(Component.objects.select_for_update(),pk=component_pk)
+  unit=get_object_or_404(OrderUnit.objects.select_for_update().select_related('order'),pk=unit_id);component=get_object_or_404(Component.objects.select_for_update(),pk=component_pk)
   if not _require_open(unit):messages.error(request,'El pedido está cerrado.');return redirect('internal_detail',kind='componentes',pk=component.pk)
   if component.status!='active':messages.error(request,'Este componente ya no está disponible.');return redirect('internal_detail',kind='componentes',pk=component.pk)
-  reservation=ComponentReservation.objects.create(unit=unit,component=component,technician=request.user,unit_serial_number=unit.serial_number,observations='Reserva directa desde Componentes')
-  ReservationAllocation.objects.create(reservation=reservation,order=unit.order,source='order',authorization=None)
-  component.status='reserved';component.save(update_fields=['status'])
- messages.success(request,f'{component} reservado para {unit.serial_number}.')
- return redirect('unit_detail',pk=unit.pk)
+  reservation=ComponentReservation.objects.create(unit=unit,component=component,technician=request.user,unit_serial_number=unit.serial_number,observations='Reserva directa desde Componentes');ReservationAllocation.objects.create(reservation=reservation,order=unit.order,source='order',authorization=None);component.status='reserved';component.save(update_fields=['status'])
+ messages.success(request,f'{component} reservado para {unit.serial_number}.');return redirect('unit_detail',pk=unit.pk)
 @login_required
 @require_POST
 def request_component_increase(request,unit_pk):
