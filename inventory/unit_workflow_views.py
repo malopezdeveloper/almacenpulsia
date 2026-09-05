@@ -76,12 +76,20 @@ def my_open_interventions(request):
  if not _can_work(request.user):return _deny()
  now=timezone.now();today=timezone.localdate();rows=[]
  qs=UnitIntervention.objects.filter(worker=request.user,created_at__date=today).select_related('unit','unit__physical_unit','unit__order','zone','destination_zone').order_by('created_at','pk')
+ counters={}
  for i in qs:
   u=i.unit;_fill_from_aiken(u);finished=bool(i.finished_at);elapsed=i.duration_seconds if finished else max(0,int((now-i.created_at).total_seconds()));open_alerts,open_reservations=_pending_attention(u)
   rows.append({'id':i.pk,'unit_id':u.pk,'serial_number':u.serial_number,'order':u.order.name if u.order_id else 'STOCK','brand':u.brand,'model':u.model,'brand_model':(' '.join(x for x in (u.brand,u.model) if x)).strip(),'processor':u.processor,'ram':u.ram,'disk':u.disk,'missing_fields':[f for f in UNIT_FIELDS if not _clean(getattr(u,f,''))],'zone':i.zone.name,'zone_id':i.zone_id,'destination_zone_id':i.destination_zone_id,'destination_zone':i.destination_zone.name if i.destination_zone_id else '','started_at':timezone.localtime(i.created_at).strftime('%H:%M:%S'),'finished_at':timezone.localtime(i.finished_at).strftime('%H:%M:%S') if i.finished_at else '','elapsed_seconds':elapsed or 0,'finished':finished,'has_attention':bool(open_alerts or open_reservations),'open_alerts':open_alerts,'open_reservations':open_reservations,'url':f'/produccion/intervencion/{i.pk}/','alert_url':f'/produccion/intervencion/{i.pk}/?mode=alerts','installation_url':f'/produccion/intervencion/{i.pk}/?mode=installation','reservation_url':f'/pedidos/unidad/{u.pk}/reservar/','expedient_url':f'/pedidos/unidad/{u.pk}/','delete_url':f'/produccion/intervencion/{i.pk}/borrar/'})
+  if finished:
+   snap=i.source_snapshot or {};selected_order_id=snap.get('selected_order_id');selected_order=snap.get('selected_order')
+   if selected_order_id:
+    key=f'order:{selected_order_id}';label=selected_order or (u.order.name if u.order_id else f'Pedido {selected_order_id}')
+   else:key='stock';label='STOCK'
+   if key not in counters:counters[key]={'key':key,'label':label,'count':0}
+   counters[key]['count']+=1
  zones=[{'id':z.pk,'name':z.name} for z in ProductionZone.objects.filter(is_active=True).order_by('position','name')]
  orders=[{'id':o.pk,'name':o.name,'customer':o.customer.name if o.customer_id else '','lot':o.lot or ''} for o in CustomerOrder.objects.filter(status='open').select_related('customer').order_by('-id')]
- return JsonResponse({'results':rows,'zones':zones,'orders':orders})
+ return JsonResponse({'results':rows,'zones':zones,'orders':orders,'counters':list(counters.values())})
 
 @login_required
 @require_POST
