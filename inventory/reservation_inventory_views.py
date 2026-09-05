@@ -10,7 +10,7 @@ from .order_models import OrderUnit,Component,ComponentReservation
 from .component_flow_models import ReservationAllocation
 from .permissions import user_has_permission
 
-def _can_reserve(user):return user.is_superuser or user.is_staff or user_has_permission(user,'components.reserve') or user_has_permission(user,'repairs.manage')
+def _can_reserve(user):return user.is_authenticated and not getattr(getattr(user,'inventory_profile',None),'is_guest',False)
 def _deny():return HttpResponseForbidden('No tienes permiso para realizar esta operación.')
 def _is_catalog(record):
  try:record.table.component_catalog;return True
