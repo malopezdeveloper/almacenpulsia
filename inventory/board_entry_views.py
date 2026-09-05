@@ -10,6 +10,7 @@ from .models import ProductionModelMySQLSource, ProductionZone, AuditLog
 from .order_models import CustomerOrder, OrderUnit, PhysicalUnit
 from .external_mysql import find_aiken_unit_exact
 from .unit_workflow_models import UnitIntervention, PhysicalUnitLocation
+from .pallet_models import Pallet, PalletUnit
 from .permissions import user_has_permission
 
 UNIT_FIELDS = ('brand', 'model', 'processor', 'ram', 'disk')
@@ -104,8 +105,6 @@ def board_start_unit(request):
         unit = (OrderUnit.objects.select_related('physical_unit', 'order')
                 .filter(order=selected_order, serial_number__iexact=sn).first())
         if unit is None:
-            # Regla de Pizarra: si no existe coincidencia, el SN pasa a formar parte
-            # del pedido activo sin obligar al técnico a abandonar su flujo de trabajo.
             aiken_row = _aiken_exact(sn)
             vals = {f: _clean((aiken_row or {}).get(f)) for f in UNIT_FIELDS}
             physical, created = PhysicalUnit.objects.get_or_create(serial_number=sn, defaults=vals)
@@ -136,7 +135,6 @@ def board_start_unit(request):
             messages.error(request, f'{sn} no existe todavía en Almacén. Para dar una unidad nueva de alta selecciona el pedido al que pertenece.')
             return redirect('production_board')
 
-    # Completa huecos con AIKEN también en unidades que ya existían en el pedido.
     if unit:
         aiken_row = aiken_row or _aiken_exact(sn)
         if aiken_row:
@@ -155,6 +153,27 @@ def board_start_unit(request):
     with transaction.atomic():
         physical = PhysicalUnit.objects.select_for_update().get(pk=unit.physical_unit_id)
         now = timezone.now()
+
+        membership = (PalletUnit.objects.select_for_update()
+                      .select_related('pallet')
+                      .filter(unit=unit).first())
+        pallet_origin = None
+        if membership:
+            if membership.pallet.status == Pallet.STATUS_SHIPPED:
+                messages.error(request, f'{sn} pertenece a {membership.pallet.code}, que ya fue enviado. La unidad está bloqueada y no puede extraerse.')
+                return redirect('production_board')
+            pallet_origin = {'pallet_id': membership.pallet_id, 'pallet_code': membership.pallet.code}
+            AuditLog.objects.create(
+                user=request.user,
+                action='unit_extracted_from_pallet',
+                object_type='PalletUnit',
+                object_id=str(membership.pk),
+                details={'serial_number': unit.serial_number, 'unit_id': unit.pk, 'order_id': unit.order_id,
+                         'pallet_id': membership.pallet_id, 'pallet_code': membership.pallet.code,
+                         'destination_zone_id': origin.pk, 'destination_zone': origin.name},
+            )
+            membership.delete()
+
         current = (PhysicalUnitLocation.objects.select_for_update().filter(physical_unit=physical)
                    .select_related('intervention', 'zone', 'worker').first())
         if current and current.zone_id == origin.pk:
@@ -178,13 +197,17 @@ def board_start_unit(request):
             'selected_order': selected_order.name if selected_order else 'STOCK',
             'aiken_found': bool(aiken_row), 'missing_fields': missing,
         }
+        if pallet_origin:
+            snapshot.update({'logistic_origin': 'pallet', **pallet_origin})
         intervention = UnitIntervention.objects.create(unit=unit, worker=request.user, zone=origin,
                                                        source=source_name, source_snapshot=snapshot)
         PhysicalUnitLocation.objects.update_or_create(
             physical_unit=physical,
             defaults={'unit': unit, 'zone': origin, 'intervention': intervention,
                       'worker': request.user, 'entered_at': now})
-    if missing:
+    if pallet_origin:
+        messages.success(request, f'{sn} extraída de {pallet_origin["pallet_code"]} y añadida a {origin.name}.')
+    elif missing:
         messages.warning(request, f'{sn} añadido. AIKEN no pudo completar: {", ".join(missing)}. Un administrador o gestor deberá cumplimentarlo.')
     else:
         messages.success(request, f'{sn} añadido a Mi Pizarra y ficha completada.')
