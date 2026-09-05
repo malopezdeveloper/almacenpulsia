@@ -6,7 +6,7 @@ class InventoryConfig(AppConfig):
  verbose_name="Inventario técnico"
  def ready(self):
   # Importar los módulos de modelos del dominio para que Django los registre.
-  from . import order_models,responsibility_models,component_flow_models,unit_workflow_models,priority_models
+  from . import order_models,responsibility_models,component_flow_models,unit_workflow_models,priority_models,pallet_models
   from . import component_catalog_signals
   from .db_utils import install_sqlite_pragmas
   install_sqlite_pragmas()
