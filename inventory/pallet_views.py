@@ -22,6 +22,10 @@ def _is_quality_zone(zone):
     return 'calidad' in text
 
 
+def _is_stock_order(order):
+    return bool(order and order.customer_id is None and order.name.strip().casefold() == 'stock')
+
+
 def _declared_zone(request):
     zone_id = request.session.get('pulsia_declared_zone_id')
     if not zone_id:
@@ -91,7 +95,7 @@ def add_intervention_to_pallet(request, intervention_pk):
     pallet = get_object_or_404(Pallet, pk=request.POST.get('pallet_id'), status=Pallet.STATUS_OPEN)
     with transaction.atomic():
         intervention = get_object_or_404(
-            UnitIntervention.objects.select_for_update().select_related('unit', 'unit__physical_unit', 'zone'),
+            UnitIntervention.objects.select_for_update().select_related('unit', 'unit__physical_unit', 'unit__order', 'unit__order__customer', 'zone'),
             pk=intervention_pk, worker=request.user, finished_at__isnull=True,
         )
         if not _is_quality_zone(intervention.zone):
@@ -103,7 +107,8 @@ def add_intervention_to_pallet(request, intervention_pk):
         intervention.finished_at = now
         intervention.duration_seconds = max(0, int((now - intervention.created_at).total_seconds()))
         snapshot = dict(intervention.source_snapshot or {})
-        snapshot.update({'logistic_destination': 'pallet', 'pallet_id': pallet.pk, 'pallet_code': pallet.code})
+        snapshot.update({'logistic_destination': 'pallet', 'pallet_id': pallet.pk, 'pallet_code': pallet.code,
+                         'order_id': intervention.unit.order_id, 'order': intervention.unit.order.name})
         intervention.source_snapshot = snapshot
         intervention.save(update_fields=['finished_at', 'duration_seconds', 'source_snapshot'])
 
@@ -115,7 +120,8 @@ def add_intervention_to_pallet(request, intervention_pk):
             object_type='PalletUnit',
             object_id=str(membership.pk),
             details={'serial_number': intervention.unit.serial_number, 'unit_id': intervention.unit_id,
-                     'order_id': intervention.unit.order_id, 'pallet_id': pallet.pk, 'pallet_code': pallet.code},
+                     'order_id': intervention.unit.order_id, 'order': intervention.unit.order.name,
+                     'pallet_id': pallet.pk, 'pallet_code': pallet.code},
         )
     return JsonResponse({'ok': True, 'pallet_id': pallet.pk, 'pallet_code': pallet.code})
 
@@ -131,7 +137,7 @@ def remove_unit_from_pallet(request, membership_pk):
         return redirect('pallet_center')
     with transaction.atomic():
         membership = get_object_or_404(
-            PalletUnit.objects.select_for_update().select_related('pallet', 'unit', 'unit__physical_unit', 'unit__order'),
+            PalletUnit.objects.select_for_update().select_related('pallet', 'unit', 'unit__physical_unit', 'unit__order', 'unit__order__customer'),
             pk=membership_pk,
         )
         if membership.pallet.status != Pallet.STATUS_OPEN:
@@ -143,10 +149,13 @@ def remove_unit_from_pallet(request, membership_pk):
 
         pallet = membership.pallet
         unit = membership.unit
+        stock_context = _is_stock_order(unit.order)
         data = {
             'serial_number': unit.serial_number,
             'unit_id': unit.pk,
             'order_id': unit.order_id,
+            'order': unit.order.name,
+            'work_context': 'stock' if stock_context else 'order',
             'pallet_id': pallet.pk,
             'pallet_code': pallet.code,
             'destination_zone_id': destination.pk,
@@ -164,9 +173,11 @@ def remove_unit_from_pallet(request, membership_pk):
                 'physical_unit_id': unit.physical_unit_id,
                 'order_id': unit.order_id,
                 'order': unit.order.name,
-                'work_context': 'order',
-                'selected_order_id': unit.order_id,
-                'selected_order': unit.order.name,
+                'work_context': 'stock' if stock_context else 'order',
+                'selected_order_id': None if stock_context else unit.order_id,
+                'selected_order': 'STOCK' if stock_context else unit.order.name,
+                'physical_zone_id': destination.pk,
+                'physical_zone': destination.name,
                 'logistic_origin': 'pallet',
                 'pallet_id': pallet.pk,
                 'pallet_code': pallet.code,
@@ -187,7 +198,7 @@ def remove_unit_from_pallet(request, membership_pk):
             object_id=str(membership_pk),
             details=data,
         )
-    messages.success(request, f'{unit.serial_number} extraída de {pallet.code} y fichada en {destination.name}.')
+    messages.success(request, f'{unit.serial_number} extraída de {pallet.code} y fichada en {destination.name}; conserva su pedido/contexto {unit.order.name}.')
     return redirect('production_board')
 
 
