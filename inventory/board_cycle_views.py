@@ -39,9 +39,21 @@ def start_unit(request):
   try:order=CustomerOrder.objects.get(pk=int(context),status='open')
   except (TypeError,ValueError,CustomerOrder.DoesNotExist):messages.error(request,'Selecciona un pedido activo o STOCK.');return redirect('production_board')
  if order is None:messages.error(request,'No existe el pedido permanente STOCK.');return redirect('production_board')
- row=_aiken(sn);vals={f:_clean((row or {}).get(f)) for f in UNIT_FIELDS}
+
+ # Ruta rápida: STOCK y PEDIDOS son la fuente primaria. AIKEN sólo se consulta
+ # cuando el SN no existe en absoluto en la base local.
+ physical=PhysicalUnit.objects.filter(serial_number__iexact=sn).first()
+ local_cycle=(OrderUnit.objects.select_related('order','physical_unit')
+              .filter(physical_unit=physical).order_by('-imported_at','-pk').first()) if physical else None
+ row=None if (physical or local_cycle) else _aiken(sn)
+ vals={f:_clean((row or {}).get(f)) for f in UNIT_FIELDS}
+
  with transaction.atomic():
-  physical=PhysicalUnit.objects.select_for_update().filter(serial_number__iexact=sn).first()
+  if physical is not None:
+   physical=PhysicalUnit.objects.select_for_update().get(pk=physical.pk)
+  else:
+   # Revalidar dentro de la transacción por si otro escaneo creó el SN.
+   physical=PhysicalUnit.objects.select_for_update().filter(serial_number__iexact=sn).first()
   if physical is None:physical=PhysicalUnit.objects.create(serial_number=sn,**vals)
   else:
    changed=[]
@@ -49,8 +61,6 @@ def start_unit(request):
     if v and not _clean(getattr(physical,f,'')):setattr(physical,f,v);changed.append(f)
    if changed:physical.save(update_fields=changed)
 
-  # Un palet abierto es stock logístico extraíble por cualquier zona. Un palet
-  # enviado queda bloqueado definitivamente para el flujo de producción.
   membership=(PalletUnit.objects.select_for_update().select_related('pallet','unit')
               .filter(unit__physical_unit=physical).first())
   pallet_origin=None
@@ -80,16 +90,13 @@ def start_unit(request):
    if location.worker_id==request.user.pk:messages.info(request,f'{sn} ya está en {origin.name} y continúa contando tiempo.')
    else:messages.error(request,f'{sn} ya está en {origin.name}, asignada a {location.worker.get_username()}.')
    return redirect('production_board')
-
-  # Fichar una unidad es lo que cambia su stock físico de zona. Si estaba en
-  # stock terminado de esa misma zona, simplemente comienza una nueva intervención.
   if location and not location.intervention.finished_at:_close(location.intervention,now,origin)
   for old in UnitIntervention.objects.select_for_update().filter(unit__physical_unit=physical,finished_at__isnull=True):_close(old,now,origin)
-  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row),'work_context':'stock' if context=='stock' else 'order','selected_order_id':None if context=='stock' else order.pk,'selected_order':'STOCK' if context=='stock' else order.name}
+  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row),'lookup_source':'local' if not row else 'aiken','work_context':'stock' if context=='stock' else 'order','selected_order_id':None if context=='stock' else order.pk,'selected_order':'STOCK' if context=='stock' else order.name}
   if pallet_origin:snapshot.update({'logistic_origin':'pallet',**pallet_origin})
   intervention=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source='aiken' if row else ('manual' if cycle_reason=='first_intake' else 'local'),source_snapshot=snapshot)
   PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':intervention,'worker':request.user,'entered_at':now})
-  AuditLog.objects.create(user=request.user,action='unit_picked_into_zone_stock',object_type='OrderUnit',object_id=str(unit.pk),details={'serial_number':sn,'zone_id':origin.pk,'zone':origin.name,'intervention_id':intervention.pk,'pallet_origin':pallet_origin})
+  AuditLog.objects.create(user=request.user,action='unit_picked_into_zone_stock',object_type='OrderUnit',object_id=str(unit.pk),details={'serial_number':sn,'zone_id':origin.pk,'zone':origin.name,'intervention_id':intervention.pk,'pallet_origin':pallet_origin,'lookup_source':'aiken' if row else 'local'})
  if pallet_origin:messages.success(request,f'{sn} extraída de {pallet_origin["pallet_code"]} y fichada en {origin.name}.')
  else:messages.success(request,f'{sn} fichada en {origin.name} · ciclo actual: {order.name}.')
  return redirect('production_board')
