@@ -48,13 +48,13 @@ def zone_stock(request):
     by_zone = {z.pk: [] for z in zones}
     for loc in locations:
         intervention = loc.intervention
-        recommended = intervention.destination_zone if intervention and intervention.finished_at else None
+        destination = intervention.destination_zone if intervention and intervention.finished_at else None
         by_zone.setdefault(loc.zone_id, []).append({
             'location': loc,
             'unit': loc.unit,
             'order': loc.unit.order,
             'working': bool(intervention and not intervention.finished_at),
-            'recommended': recommended,
+            'recommended': destination,
             'source_zone': intervention.zone if intervention else None,
         })
 
@@ -73,11 +73,12 @@ def zone_stock(request):
 @login_required
 @require_POST
 def finish_unit_intervention(request, intervention_pk):
-    """Finaliza trabajo sin confundir recomendación con movimiento físico.
+    """Finaliza el trabajo y mueve físicamente la unidad al destino elegido.
 
-    Regla general: destination_zone es una recomendación y la unidad permanece en
-    el stock físico de la zona que acaba de trabajarla. Excepción: Pintura ->
-    Secadero sí es un movimiento físico inmediato.
+    Mientras una intervención está abierta, la ubicación física es la zona/origen
+    donde trabaja el técnico. Al finalizar, destination_zone pasa a ser la nueva
+    ubicación física. Secadero mantiene la restricción especial: sólo Pintura
+    puede introducir unidades allí.
     """
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
@@ -92,12 +93,12 @@ def finish_unit_intervention(request, intervention_pk):
             ProductionZone, pk=request.POST.get('destination_zone'), is_active=True)
 
         if destination.pk == intervention.zone_id:
-            return _finish_error(request, 'El destino recomendado debe ser distinto de la zona actual.')
+            return _finish_error(request, 'El destino debe ser distinto de la zona actual.')
 
         is_dryer = _zone_matches(destination, 'secadero')
         is_paint = _zone_matches(intervention.zone, 'pintura')
         if is_dryer and not is_paint:
-            return _finish_error(request, 'Sólo Pintura puede enviar directamente una unidad a Secadero.', 403)
+            return _finish_error(request, 'Sólo Pintura puede enviar una unidad a Secadero.', 403)
 
         now = timezone.now()
         intervention.finished_at = now
@@ -108,40 +109,37 @@ def finish_unit_intervention(request, intervention_pk):
         physical = intervention.unit.physical_unit
         location = (PhysicalUnitLocation.objects.select_for_update()
                     .filter(physical_unit=physical).first())
-        physical_destination = destination if is_dryer and is_paint else intervention.zone
         if location:
             location.unit = intervention.unit
-            location.zone = physical_destination
+            location.zone = destination
             location.intervention = intervention
             location.worker = request.user
-            if physical_destination.pk != intervention.zone_id:
-                location.entered_at = now
+            location.entered_at = now
             location.save(update_fields=['unit', 'zone', 'intervention', 'worker', 'entered_at', 'updated_at'])
         else:
             PhysicalUnitLocation.objects.create(
-                physical_unit=physical, unit=intervention.unit, zone=physical_destination,
+                physical_unit=physical, unit=intervention.unit, zone=destination,
                 intervention=intervention, worker=request.user, entered_at=now,
             )
 
-        action = 'unit_moved_directly_to_dryer' if physical_destination.pk != intervention.zone_id else 'unit_destination_recommended'
         AuditLog.objects.create(
-            user=request.user, action=action, object_type='OrderUnit', object_id=str(intervention.unit_id),
+            user=request.user, action='unit_moved_to_destination', object_type='OrderUnit', object_id=str(intervention.unit_id),
             details={
                 'serial_number': intervention.unit.serial_number,
                 'intervention_id': intervention.pk,
-                'physical_zone_id': physical_destination.pk,
-                'physical_zone': physical_destination.name,
-                'recommended_zone_id': destination.pk,
-                'recommended_zone': destination.name,
                 'source_zone_id': intervention.zone_id,
                 'source_zone': intervention.zone.name,
+                'destination_zone_id': destination.pk,
+                'destination_zone': destination.name,
+                'physical_zone_id': destination.pk,
+                'physical_zone': destination.name,
             },
         )
 
-    if is_dryer and is_paint:
-        messages.success(request, f'{intervention.unit.serial_number}: enviada físicamente de Pintura a Secadero.')
-    else:
-        messages.success(request, f'{intervention.unit.serial_number}: trabajo finalizado. Permanece en stock de {intervention.zone.name}; destino recomendado: {destination.name}.')
+    messages.success(
+        request,
+        f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; enviada al stock de {destination.name}.',
+    )
     return redirect('production_board')
 
 
