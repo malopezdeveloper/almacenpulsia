@@ -1,14 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404,redirect,render
 from django.views.decorators.http import require_POST
 from .models import InventoryTable,InventoryRecord,RecordMovement,AuditLog
 from .order_models import OrderUnit,Component,ComponentReservation
-from .component_flow_models import ReservationAllocation
-from .permissions import user_has_permission
+from .component_flow_models import ReservationAllocation,ComponentCatalog
 
 def _can_reserve(user):return user.is_authenticated and not getattr(getattr(user,'inventory_profile',None),'is_guest',False)
 def _deny():return HttpResponseForbidden('No tienes permiso para realizar esta operación.')
@@ -28,6 +26,9 @@ def _component_for_record(record):
  linked=Component.objects.filter(inventory_record=record).first()
  if linked:return linked
  return Component.objects.create(component_type=record.table.name,reference=_record_reference(record),inventory_record=record,status='active')
+def _table_count(table):
+ try:table.component_catalog;return sum(1 for r in table.records.all() if _quantity(r)>0)
+ except Exception:return table.records.filter(status='available').count()
 @login_required
 def warehouse_table_menu(request,unit_pk):
  if not _can_reserve(request.user):return _deny()
@@ -35,10 +36,8 @@ def warehouse_table_menu(request,unit_pk):
  if unit.order.status!='open':messages.error(request,'El pedido está cerrado.');return redirect('unit_detail',pk=unit.pk)
  tables=[]
  for table in InventoryTable.objects.filter(active=True).order_by('position','name'):
-  try:table.component_catalog;count=sum(1 for r in table.records.all() if _quantity(r)>0)
-  except Exception:count=table.records.filter(status='available').count()
-  tables.append({'table':table,'count':count,'fields':table.inventory_fields.count()})
- return render(request,'inventory/reservation_inventory_menu.html',{'unit':unit,'tables':tables})
+  tables.append({'table':table,'count':_table_count(table),'fields':table.inventory_fields.count()})
+ return render(request,'inventory/reservation_inventory_menu.html',{'unit':unit,'tables':tables,'reservation_origin':'warehouse'})
 @login_required
 def warehouse_inventory_table(request,unit_pk,slug):
  if not _can_reserve(request.user):return _deny()
@@ -49,15 +48,15 @@ def warehouse_inventory_table(request,unit_pk,slug):
  except Exception:records=[r for r in records if r.status=='available']
  if q:
   needle=q.casefold();records=[r for r in records if needle in ' '.join([r.internal_id]+[str(v) for v in (r.data or {}).values()]).casefold()]
- rows=[{'record':r,'values':[r.internal_id]+[(r.data or {}).get(f.key,'') for f in fields]} for r in records[:1000]];return render(request,'inventory/reservation_inventory_table.html',{'unit':unit,'table':table,'fields':fields,'rows':rows,'q':q})
+ rows=[{'record':r,'values':[r.internal_id]+[(r.data or {}).get(f.key,'') for f in fields]} for r in records[:1000]];return render(request,'inventory/reservation_inventory_table.html',{'unit':unit,'table':table,'fields':fields,'rows':rows,'q':q,'is_component_table':hasattr(table,'component_catalog')})
 @login_required
 def order_inventory_components(request,unit_pk):
  if not _can_reserve(request.user):return _deny()
- unit=get_object_or_404(OrderUnit.objects.select_related('order'),pk=unit_pk);catalog=InventoryTable.objects.filter(component_catalog__active=True,active=True).order_by('name').first()
- if catalog:return redirect('warehouse_inventory_table',unit_pk=unit.pk,slug=catalog.slug)
- table=InventoryTable.objects.filter(Q(name__iexact='Componentes')|Q(slug__iexact='componentes'),active=True).first()
- if table:return redirect('warehouse_inventory_table',unit_pk=unit.pk,slug=table.slug)
- messages.error(request,'No existen tablas activas de Componentes.');return redirect('warehouse_table_menu',unit_pk=unit.pk)
+ unit=get_object_or_404(OrderUnit.objects.select_related('order','order__customer'),pk=unit_pk)
+ if unit.order.status!='open':messages.error(request,'El pedido está cerrado.');return redirect('unit_detail',pk=unit.pk)
+ catalogs=ComponentCatalog.objects.select_related('component_type','inventory_table').filter(active=True,component_type__active=True,inventory_table__active=True).order_by('component_type__name')
+ tables=[{'table':c.inventory_table,'count':_table_count(c.inventory_table),'fields':c.inventory_table.inventory_fields.count(),'component_type':c.component_type} for c in catalogs]
+ return render(request,'inventory/reservation_inventory_menu.html',{'unit':unit,'tables':tables,'reservation_origin':'components'})
 @login_required
 @require_POST
 def reserve_inventory_record(request,unit_pk,record_pk):
