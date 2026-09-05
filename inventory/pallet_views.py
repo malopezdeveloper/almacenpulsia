@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import AuditLog
+from .models import AuditLog, ProductionZone
 from .pallet_models import Pallet, PalletUnit
 from .unit_workflow_models import UnitIntervention, PhysicalUnitLocation
 
@@ -22,11 +22,23 @@ def _is_quality_zone(zone):
     return 'calidad' in text
 
 
-def _can_quality(user):
-    if user.is_superuser or user.is_staff:
-        return True
-    today = timezone.localdate()
-    return UnitIntervention.objects.filter(worker=user, created_at__date=today, zone__name__icontains='calidad').exists() or UnitIntervention.objects.filter(worker=user, created_at__date=today, zone__code__icontains='calidad').exists()
+def _can_quality(request):
+    zone_id = request.session.get('pulsia_declared_zone_id')
+    if not zone_id:
+        return False
+    zone = ProductionZone.objects.filter(pk=zone_id, is_active=True).first()
+    return bool(zone and _is_quality_zone(zone))
+
+
+@login_required
+@require_POST
+def declare_worker_zone(request):
+    if not _can_work(request.user):
+        return HttpResponseForbidden('No tienes permiso para esta operación.')
+    zone = get_object_or_404(ProductionZone, pk=request.POST.get('zone_id'), is_active=True)
+    request.session['pulsia_declared_zone_id'] = zone.pk
+    request.session.modified = True
+    return JsonResponse({'ok': True, 'zone_id': zone.pk, 'zone': zone.name, 'is_quality': _is_quality_zone(zone)})
 
 
 @login_required
@@ -37,7 +49,7 @@ def pallet_center(request):
                .select_related('created_by', 'shipped_by').order_by('-id'))
     return render(request, 'inventory/pallets.html', {
         'pallets': pallets,
-        'can_quality': _can_quality(request.user),
+        'can_quality': _can_quality(request),
     })
 
 
@@ -54,8 +66,8 @@ def open_pallets_api(request):
 @login_required
 @require_POST
 def create_pallet(request):
-    if not _can_quality(request.user):
-        return HttpResponseForbidden('Sólo Calidad puede crear palets.')
+    if not _can_quality(request):
+        return HttpResponseForbidden('Sólo un usuario situado en Calidad puede crear palets.')
     pallet = Pallet.objects.create(created_by=request.user)
     AuditLog.objects.create(user=request.user, action='pallet_created', object_type='Pallet', object_id=str(pallet.pk), details={'code': pallet.code})
     messages.success(request, f'{pallet.code} creado. Puedes empezar a añadir unidades desde Calidad.')
@@ -67,6 +79,8 @@ def create_pallet(request):
 def add_intervention_to_pallet(request, intervention_pk):
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
+    if not _can_quality(request):
+        return JsonResponse({'ok': False, 'error': 'Sólo Calidad puede enviar unidades a Palet / Enviado.'}, status=403)
     pallet = get_object_or_404(Pallet, pk=request.POST.get('pallet_id'), status=Pallet.STATUS_OPEN)
     with transaction.atomic():
         intervention = get_object_or_404(
@@ -102,7 +116,7 @@ def add_intervention_to_pallet(request, intervention_pk):
 @login_required
 @require_POST
 def remove_unit_from_pallet(request, membership_pk):
-    if not _can_quality(request.user):
+    if not _can_quality(request):
         return HttpResponseForbidden('Sólo Calidad puede modificar un palet abierto.')
     with transaction.atomic():
         membership = get_object_or_404(PalletUnit.objects.select_for_update().select_related('pallet', 'unit'), pk=membership_pk)
@@ -121,7 +135,7 @@ def remove_unit_from_pallet(request, membership_pk):
 @login_required
 @require_POST
 def ship_pallet(request, pallet_pk):
-    if not _can_quality(request.user):
+    if not _can_quality(request):
         return HttpResponseForbidden('Sólo Calidad puede enviar palets.')
     with transaction.atomic():
         pallet = get_object_or_404(Pallet.objects.select_for_update(), pk=pallet_pk, status=Pallet.STATUS_OPEN)
