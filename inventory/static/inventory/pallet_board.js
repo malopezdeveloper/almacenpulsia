@@ -59,12 +59,13 @@
 
   function decorateDestinations(){
     const headers=document.querySelectorAll('.queue-table thead th');
-    if(headers[9])headers[9].textContent='Destino recomendado';
+    if(headers[9])headers[9].textContent='Destino';
     document.querySelectorAll('.dest-select').forEach(sel=>{
+      const empty=[...sel.options].find(o=>!o.value);
+      if(empty)empty.textContent='Sin destino · queda en origen';
       [...sel.options].filter(o=>String(o.value).startsWith('pallet:')).forEach(o=>o.remove());
       [...sel.querySelectorAll('optgroup[label="Palet / Enviado"]')].forEach(g=>g.remove());
 
-      // Secadero sólo puede seleccionarse desde una intervención de Pintura.
       [...sel.options].forEach(o=>{
         const text=(o.textContent||'').toLocaleLowerCase('es');
         if(!text.includes('secadero'))return;
@@ -72,7 +73,6 @@
         if(!text.includes('directo'))o.textContent=o.textContent+' · movimiento directo';
       });
 
-      // Palet / Enviado continúa siendo un destino logístico exclusivo de Calidad.
       if(isQualityRow(sel)&&openPallets.length){
         const group=document.createElement('optgroup');group.label='Palet / Enviado';
         openPallets.forEach(p=>{const o=document.createElement('option');o.value='pallet:'+p.id;o.textContent=p.code+' · '+p.units+' ud.';group.appendChild(o)});
@@ -85,7 +85,24 @@
     const btn=e.target.closest('.finish-btn');
     if(!btn)return;
     const sel=document.querySelector('.dest-select[data-id="'+btn.dataset.id+'"]');
-    if(!sel||!String(sel.value).startsWith('pallet:'))return;
+    if(!sel)return;
+
+    // Sin destino: finalizar es válido y la unidad permanece físicamente en la zona origen.
+    // Interceptamos antes del manejador antiguo de la plantilla, que exigía un destino.
+    if(!sel.value){
+      e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+      btn.disabled=true;
+      try{
+        const body=new URLSearchParams({destination_zone:''});
+        const r=await fetch('/produccion/intervencion/'+btn.dataset.id+'/terminar/',{method:'POST',headers:{'X-CSRFToken':csrf,'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},body:body.toString()});
+        let d={};try{d=await r.json()}catch(_e){}
+        if(!r.ok)throw new Error(d.error||'No se pudo terminar la unidad.');
+        location.reload();
+      }catch(err){btn.disabled=false;alert(err.message||'No se pudo terminar la unidad.')}
+      return;
+    }
+
+    if(!String(sel.value).startsWith('pallet:'))return;
     e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
     const palletId=String(sel.value).split(':')[1];
     if(!palletId)return;
