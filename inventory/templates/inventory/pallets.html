@@ -1,0 +1,31 @@
+{% extends 'inventory/base.html' %}
+{% block title %}Palet / Enviado · PULSIA{% endblock %}
+{% block content %}
+<style>
+.pallet-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.pallet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}.pallet-card{position:relative;min-height:155px;padding:16px;border:1px solid #9e8564;border-radius:10px;cursor:pointer;box-shadow:0 3px 10px #0002;background:repeating-linear-gradient(0deg,#c89e65 0,#c89e65 18px,#b98952 19px,#b98952 22px),repeating-linear-gradient(90deg,#ffffff14 0,#ffffff14 42px,#0000000b 43px,#0000000b 46px);color:#2b2118}.pallet-card.shipped{background:repeating-linear-gradient(0deg,#a9c88f 0,#a9c88f 18px,#88ae71 19px,#88ae71 22px),repeating-linear-gradient(90deg,#ffffff14 0,#ffffff14 42px,#0000000b 43px,#0000000b 46px)}.pallet-code{font-size:21px;font-weight:900}.pallet-status{display:inline-block;margin-top:7px;padding:3px 8px;border-radius:999px;background:#fff9;font-size:12px;font-weight:900}.pallet-meta{margin-top:18px;font-weight:700}.pallet-card small{display:block;margin-top:4px}.pallet-dialog{width:min(900px,94vw);border:0;border-radius:12px;padding:0;box-shadow:0 20px 60px #0006}.pallet-dialog::backdrop{background:#0007}.dialog-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);background:#f3f5f7}.dialog-body{padding:16px;max-height:72vh;overflow:auto}.dialog-close{border:0;background:transparent;font-size:25px;cursor:pointer}.pallet-table{width:100%;border-collapse:collapse}.pallet-table th,.pallet-table td{padding:8px;border-bottom:1px solid var(--line);text-align:left}.ship-form{margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#f8fafb}.ship-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.extra-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}@media(max-width:700px){.ship-grid,.extra-row{grid-template-columns:1fr}}
+</style>
+<div class="pallet-head"><div><h1>Palet / Enviado</h1><div class="muted">Palets abiertos y expediciones. Un palet puede contener unidades de distintos pedidos.</div></div><div>{% if can_quality %}<form method="post" action="{% url 'pallet_create' %}">{% csrf_token %}<button class="btn">+ Crear palet vacío</button></form>{% endif %}</div></div>
+<div class="pallet-grid">
+{% for p in pallets %}
+<div class="pallet-card {% if p.status == 'shipped' %}shipped{% endif %}" onclick="document.getElementById('palletDlg{{p.pk}}').showModal()">
+  <div class="pallet-code">▧ {{p.code}}</div>
+  <span class="pallet-status">{% if p.status == 'shipped' %}ENVIADO{% else %}ABIERTO{% endif %}</span>
+  <div class="pallet-meta">{{p.unit_count}} unidades · {{p.order_count}} pedidos</div>
+  {% if p.status == 'shipped' %}<small>{{p.shipped_at|date:'d/m/Y H:i'}} · {{p.recipient}}</small>{% else %}<small>Preparando envío</small>{% endif %}
+</div>
+<dialog class="pallet-dialog" id="palletDlg{{p.pk}}">
+  <div class="dialog-head"><div><b>{{p.code}}</b> · {{p.get_status_display}}</div><button class="dialog-close" type="button" onclick="this.closest('dialog').close()">×</button></div>
+  <div class="dialog-body">
+    {% if p.status == 'shipped' %}<div class="card"><b>Enviado:</b> {{p.shipped_at|date:'d/m/Y H:i'}} · <b>Destinatario:</b> {{p.recipient}}{% if p.shipping_data %}<br>{% for k,v in p.shipping_data.items %}<b>{{k}}:</b> {{v}}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}</div>{% endif %}
+    <table class="pallet-table"><thead><tr><th>SN</th><th>Pedido</th><th>Cliente</th><th>Entrada en palet</th>{% if can_quality and p.status == 'open' %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for m in p.units.all %}<tr><td><a href="{% url 'unit_detail' m.unit.pk %}">{{m.unit.serial_number}}</a></td><td><a href="{% url 'order_detail' m.unit.order.pk %}">{{m.unit.order.name}}</a></td><td>{% if m.unit.order.customer_id %}{{m.unit.order.customer.name}}{% else %}—{% endif %}</td><td>{{m.added_at|date:'d/m/Y H:i'}}</td>{% if can_quality and p.status == 'open' %}<td><form method="post" action="{% url 'pallet_remove_unit' m.pk %}" onsubmit="return confirm('¿Retirar {{m.unit.serial_number|escapejs}} del palet?')">{% csrf_token %}<button class="btn secondary small">Retirar</button></form></td>{% endif %}</tr>{% empty %}<tr><td colspan="5">Palet vacío.</td></tr>{% endfor %}
+    </tbody></table>
+    {% if can_quality and p.status == 'open' %}
+    <form class="ship-form" method="post" action="{% url 'pallet_ship' p.pk %}" onsubmit="return confirm('¿Marcar {{p.code|escapejs}} como enviado? Después no podrá modificarse.')">{% csrf_token %}<h3>Enviar palet</h3><p class="muted">Los datos de expedición sólo se solicitan en este momento.</p><div class="ship-grid"><div><label>Fecha de envío</label><input type="datetime-local" name="shipped_at" required></div><div><label>Destinatario</label><input name="recipient" required></div></div><div id="extra{{p.pk}}"></div><button type="button" class="btn secondary small" onclick="addExtra({{p.pk}})">+ Añadir campo</button> <button class="btn" type="submit">Marcar como enviado</button></form>
+    {% endif %}
+  </div>
+</dialog>
+{% empty %}<div class="card">Todavía no hay palets.</div>{% endfor %}
+</div>
+<script>function addExtra(id){let box=document.getElementById('extra'+id),r=document.createElement('div');r.className='extra-row';r.innerHTML='<input name="extra_name" placeholder="Nombre del campo"><input name="extra_value" placeholder="Valor">';box.appendChild(r)}</script>
+{% endblock %}
