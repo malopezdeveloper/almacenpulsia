@@ -6,6 +6,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from .models import ProductionZone
 from .unit_workflow_models import UnitIntervention,PhysicalUnitLocation
+from .permissions import user_is_manager
 
 
 def _parse_day(value, fallback):
@@ -17,7 +18,7 @@ def _parse_day(value, fallback):
 
 @login_required
 def zone_boards(request):
-    if not (request.user.is_staff or request.user.is_superuser):
+    if not (request.user.is_staff or user_is_manager(request.user)):
         return HttpResponseForbidden('Solo Gestor y Administradores pueden consultar las Pizarras de Zona.')
     today=timezone.localdate()
     start=_parse_day(request.GET.get('start'),today)
@@ -28,12 +29,16 @@ def zone_boards(request):
     qs=(UnitIntervention.objects.filter(created_at__date__range=(start,end))
         .select_related('unit','unit__order','worker','zone','destination_zone')
         .order_by('zone__position','zone__name','created_at','pk'))
-    current_ids=set(PhysicalUnitLocation.objects.filter(zone_id__in=boards.keys()).values_list('intervention_id',flat=True))
+    current_zone_by_intervention=dict(PhysicalUnitLocation.objects.filter(zone_id__in=boards.keys()).values_list('intervention_id','zone_id'))
     for i in qs:
         if i.zone_id not in boards:continue
         local_start=timezone.localtime(i.created_at)
         local_end=timezone.localtime(i.finished_at) if i.finished_at else None
-        row={'intervention':i,'sn':i.unit.serial_number,'order':i.unit.order.name if i.unit.order_id else 'STOCK','worker':i.worker.get_full_name().strip() or i.worker.get_username(),'start':local_start,'finish':local_end,'duration_minutes':i.duration_minutes if i.finished_at else None,'is_current':i.pk in current_ids}
+        # Una intervención sólo consta como "aquí" si la ubicación física sigue
+        # siendo la misma zona. Esto evita que Pintura figure como ubicación tras
+        # un movimiento directo a Secadero.
+        is_current=current_zone_by_intervention.get(i.pk)==i.zone_id
+        row={'intervention':i,'sn':i.unit.serial_number,'order':i.unit.order.name if i.unit.order_id else 'STOCK','worker':i.worker.get_full_name().strip() or i.worker.get_username(),'start':local_start,'finish':local_end,'duration_minutes':i.duration_minutes if i.finished_at else None,'is_current':is_current}
         boards[i.zone_id]['rows'].append(row);boards[i.zone_id]['total']+=1
         if row['is_current']:boards[i.zone_id]['currently_here']+=1
     return render(request,'inventory/zone_boards.html',{'boards':list(boards.values()),'start':start,'end':end,'today':today,'total_units':sum(b['total'] for b in boards.values())})
