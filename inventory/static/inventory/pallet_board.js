@@ -4,7 +4,18 @@
 
   const csrfEl=document.querySelector('#unitForm input[name=csrfmiddlewaretoken]');
   const csrf=csrfEl?csrfEl.value:'';
+  const workerZone=document.getElementById('workerZone');
   let openPallets=[];
+
+  async function syncDeclaredZone(){
+    if(!workerZone||!workerZone.value)return;
+    try{
+      const body=new URLSearchParams({zone_id:workerZone.value});
+      await fetch('/produccion/pizarra/zona-declarada/',{method:'POST',headers:{'X-CSRFToken':csrf,'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},body:body.toString()});
+    }catch(e){console.warn('PULSIA: no se pudo sincronizar la zona declarada',e)}
+  }
+
+  if(workerZone){workerZone.addEventListener('change',syncDeclaredZone);setTimeout(syncDeclaredZone,50)}
 
   function ensureCounterBar(){
     let bar=document.getElementById('boardCounters');
@@ -48,6 +59,7 @@
   function decorateDestinations(){
     document.querySelectorAll('.dest-select').forEach(sel=>{
       [...sel.options].filter(o=>String(o.value).startsWith('pallet:')).forEach(o=>o.remove());
+      [...sel.querySelectorAll('optgroup[label="Palet / Enviado"]')].forEach(g=>g.remove());
       if(!isQualityRow(sel))return;
       if(openPallets.length){
         const group=document.createElement('optgroup');group.label='Palet / Enviado';
@@ -67,6 +79,7 @@
     if(!palletId)return;
     btn.disabled=true;
     try{
+      await syncDeclaredZone();
       const body=new URLSearchParams({pallet_id:palletId});
       const r=await fetch('/pedidos/palets/intervencion/'+btn.dataset.id+'/anadir/',{method:'POST',headers:{'X-CSRFToken':csrf,'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},body:body.toString()});
       let d={};try{d=await r.json()}catch(_e){}
