@@ -34,9 +34,10 @@ def warehouse_table_menu(request,unit_pk):
  if not _can_reserve(request.user):return _deny()
  unit=get_object_or_404(OrderUnit.objects.select_related('order','order__customer'),pk=unit_pk)
  if unit.order.status!='open':messages.error(request,'El pedido está cerrado.');return redirect('unit_detail',pk=unit.pk)
- tables=[]
- for table in InventoryTable.objects.filter(active=True).order_by('position','name'):
-  tables.append({'table':table,'count':_table_count(table),'fields':table.inventory_fields.count()})
+ # Bodega y Componentes son orígenes distintos. Las tablas vinculadas a
+ # ComponentCatalog nunca deben aparecer en el selector de Bodega.
+ warehouse_tables=InventoryTable.objects.filter(active=True,component_catalog__isnull=True).order_by('position','name')
+ tables=[{'table':table,'count':_table_count(table),'fields':table.inventory_fields.count()} for table in warehouse_tables]
  return render(request,'inventory/reservation_inventory_menu.html',{'unit':unit,'tables':tables,'reservation_origin':'warehouse'})
 @login_required
 def warehouse_inventory_table(request,unit_pk,slug):
