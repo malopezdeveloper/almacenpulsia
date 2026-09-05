@@ -75,6 +75,8 @@ def create_pallet(request):
         return HttpResponseForbidden('Sólo un usuario situado en Calidad puede crear palets.')
     pallet = Pallet.objects.create(created_by=request.user)
     AuditLog.objects.create(user=request.user, action='pallet_created', object_type='Pallet', object_id=str(pallet.pk), details={'code': pallet.code})
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True, 'pallet_id': pallet.pk, 'pallet_code': pallet.code, 'units': 0})
     messages.success(request, f'{pallet.code} creado. Puedes empezar a añadir unidades desde Calidad.')
     return redirect('pallet_center')
 
