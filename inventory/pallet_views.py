@@ -22,11 +22,15 @@ def _is_quality_zone(zone):
     return 'calidad' in text
 
 
-def _can_quality(request):
+def _declared_zone(request):
     zone_id = request.session.get('pulsia_declared_zone_id')
     if not zone_id:
-        return False
-    zone = ProductionZone.objects.filter(pk=zone_id, is_active=True).first()
+        return None
+    return ProductionZone.objects.filter(pk=zone_id, is_active=True).first()
+
+
+def _can_quality(request):
+    zone = _declared_zone(request)
     return bool(zone and _is_quality_zone(zone))
 
 
@@ -50,6 +54,7 @@ def pallet_center(request):
     return render(request, 'inventory/pallets.html', {
         'pallets': pallets,
         'can_quality': _can_quality(request),
+        'declared_zone': _declared_zone(request),
     })
 
 
@@ -116,20 +121,69 @@ def add_intervention_to_pallet(request, intervention_pk):
 @login_required
 @require_POST
 def remove_unit_from_pallet(request, membership_pk):
-    if not _can_quality(request):
-        return HttpResponseForbidden('Sólo Calidad puede modificar un palet abierto.')
+    if not _can_work(request.user):
+        return HttpResponseForbidden('No tienes permiso para extraer unidades del palet.')
+    destination = _declared_zone(request)
+    if not destination:
+        messages.error(request, 'Antes de extraer una unidad debes declarar tu zona en Mi Pizarra.')
+        return redirect('pallet_center')
     with transaction.atomic():
-        membership = get_object_or_404(PalletUnit.objects.select_for_update().select_related('pallet', 'unit'), pk=membership_pk)
+        membership = get_object_or_404(
+            PalletUnit.objects.select_for_update().select_related('pallet', 'unit', 'unit__physical_unit', 'unit__order'),
+            pk=membership_pk,
+        )
         if membership.pallet.status != Pallet.STATUS_OPEN:
-            messages.error(request, 'Un palet enviado ya no puede modificarse.')
+            messages.error(request, 'Un palet enviado está bloqueado y sus unidades ya no pueden extraerse.')
             return redirect('pallet_center')
-        data = {'serial_number': membership.unit.serial_number, 'unit_id': membership.unit_id,
-                'order_id': membership.unit.order_id, 'pallet_id': membership.pallet_id, 'pallet_code': membership.pallet.code}
-        pallet_code = membership.pallet.code
+        if PhysicalUnitLocation.objects.select_for_update().filter(physical_unit=membership.unit.physical_unit).exists():
+            messages.error(request, 'La unidad ya tiene una ubicación de producción activa y no puede extraerse del palet.')
+            return redirect('pallet_center')
+
+        pallet = membership.pallet
+        unit = membership.unit
+        data = {
+            'serial_number': unit.serial_number,
+            'unit_id': unit.pk,
+            'order_id': unit.order_id,
+            'pallet_id': pallet.pk,
+            'pallet_code': pallet.code,
+            'destination_zone_id': destination.pk,
+            'destination_zone': destination.name,
+        }
         membership.delete()
-        AuditLog.objects.create(user=request.user, action='unit_removed_from_pallet', object_type='PalletUnit', object_id=str(membership_pk), details=data)
-    messages.success(request, f'Unidad retirada de {pallet_code}.')
-    return redirect('pallet_center')
+        now = timezone.now()
+        intervention = UnitIntervention.objects.create(
+            unit=unit,
+            worker=request.user,
+            zone=destination,
+            source='local',
+            source_snapshot={
+                'serial_number': unit.serial_number,
+                'physical_unit_id': unit.physical_unit_id,
+                'order_id': unit.order_id,
+                'order': unit.order.name,
+                'logistic_origin': 'pallet',
+                'pallet_id': pallet.pk,
+                'pallet_code': pallet.code,
+            },
+        )
+        PhysicalUnitLocation.objects.create(
+            physical_unit=unit.physical_unit,
+            unit=unit,
+            zone=destination,
+            intervention=intervention,
+            worker=request.user,
+            entered_at=now,
+        )
+        AuditLog.objects.create(
+            user=request.user,
+            action='unit_extracted_from_pallet',
+            object_type='PalletUnit',
+            object_id=str(membership_pk),
+            details=data,
+        )
+    messages.success(request, f'{unit.serial_number} extraída de {pallet.code} y enviada a {destination.name}.')
+    return redirect('production_board')
 
 
 @login_required
