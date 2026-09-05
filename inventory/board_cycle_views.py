@@ -10,6 +10,7 @@ from .models import AuditLog, ProductionModelMySQLSource, ProductionZone
 from .order_models import CustomerOrder, OrderUnit, PhysicalUnit
 from .external_mysql import find_aiken_unit_exact
 from .unit_workflow_models import UnitIntervention, PhysicalUnitLocation
+from .pallet_models import Pallet, PalletUnit
 
 UNIT_FIELDS=('brand','model','processor','ram','disk')
 def _clean(v):return ' '.join(str(v or '').strip().split())
@@ -47,6 +48,20 @@ def start_unit(request):
    for f,v in vals.items():
     if v and not _clean(getattr(physical,f,'')):setattr(physical,f,v);changed.append(f)
    if changed:physical.save(update_fields=changed)
+
+  # Un palet abierto es stock logístico extraíble por cualquier zona. Un palet
+  # enviado queda bloqueado definitivamente para el flujo de producción.
+  membership=(PalletUnit.objects.select_for_update().select_related('pallet','unit')
+              .filter(unit__physical_unit=physical).first())
+  pallet_origin=None
+  if membership:
+   if membership.pallet.status==Pallet.STATUS_SHIPPED:
+    messages.error(request,f'{sn} pertenece a {membership.pallet.code}, que ya fue enviado. No puede extraerse.')
+    return redirect('production_board')
+   pallet_origin={'pallet_id':membership.pallet_id,'pallet_code':membership.pallet.code,'membership_id':membership.pk}
+   AuditLog.objects.create(user=request.user,action='unit_extracted_from_pallet',object_type='PalletUnit',object_id=str(membership.pk),details={'serial_number':sn,'pallet_id':membership.pallet_id,'pallet_code':membership.pallet.code,'destination_zone_id':origin.pk,'destination_zone':origin.name})
+   membership.delete()
+
   current=OrderUnit.objects.select_for_update().filter(physical_unit=physical).select_related('order').order_by('-imported_at','-pk').first()
   if current is None:
    unit=OrderUnit.objects.create(order=order,physical_unit=physical,serial_number=sn,aiken_lot=_clean((row or {}).get('lot')) or order.lot,**vals);cycle_reason='first_intake'
@@ -59,14 +74,22 @@ def start_unit(request):
   for f,v in vals.items():
    if v and not _clean(getattr(unit,f,'')):setattr(unit,f,v);changed.append(f)
   if changed:unit.save(update_fields=changed)
+
   now=timezone.now();location=PhysicalUnitLocation.objects.select_for_update().filter(physical_unit=physical).select_related('intervention','zone','worker').first()
-  if location and location.zone_id==origin.pk:
+  if location and location.zone_id==origin.pk and not location.intervention.finished_at:
    if location.worker_id==request.user.pk:messages.info(request,f'{sn} ya está en {origin.name} y continúa contando tiempo.')
    else:messages.error(request,f'{sn} ya está en {origin.name}, asignada a {location.worker.get_username()}.')
    return redirect('production_board')
-  if location:_close(location.intervention,now,origin)
+
+  # Fichar una unidad es lo que cambia su stock físico de zona. Si estaba en
+  # stock terminado de esa misma zona, simplemente comienza una nueva intervención.
+  if location and not location.intervention.finished_at:_close(location.intervention,now,origin)
   for old in UnitIntervention.objects.select_for_update().filter(unit__physical_unit=physical,finished_at__isnull=True):_close(old,now,origin)
-  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row)}
+  snapshot={'serial_number':sn,'physical_unit_id':physical.pk,'order_id':order.pk,'order':order.name,'cycle_id':unit.pk,'cycle_reason':cycle_reason,'brand':unit.brand,'model':unit.model,'processor':unit.processor,'ram':unit.ram,'disk':unit.disk,'aiken_lot':unit.aiken_lot,'aiken_found':bool(row),'work_context':'stock' if context=='stock' else 'order','selected_order_id':None if context=='stock' else order.pk,'selected_order':'STOCK' if context=='stock' else order.name}
+  if pallet_origin:snapshot.update({'logistic_origin':'pallet',**pallet_origin})
   intervention=UnitIntervention.objects.create(unit=unit,worker=request.user,zone=origin,source='aiken' if row else ('manual' if cycle_reason=='first_intake' else 'local'),source_snapshot=snapshot)
   PhysicalUnitLocation.objects.update_or_create(physical_unit=physical,defaults={'unit':unit,'zone':origin,'intervention':intervention,'worker':request.user,'entered_at':now})
- messages.success(request,f'{sn} añadido a Mi Pizarra · ciclo actual: {order.name}.');return redirect('production_board')
+  AuditLog.objects.create(user=request.user,action='unit_picked_into_zone_stock',object_type='OrderUnit',object_id=str(unit.pk),details={'serial_number':sn,'zone_id':origin.pk,'zone':origin.name,'intervention_id':intervention.pk,'pallet_origin':pallet_origin})
+ if pallet_origin:messages.success(request,f'{sn} extraída de {pallet_origin["pallet_code"]} y fichada en {origin.name}.')
+ else:messages.success(request,f'{sn} fichada en {origin.name} · ciclo actual: {order.name}.')
+ return redirect('production_board')
