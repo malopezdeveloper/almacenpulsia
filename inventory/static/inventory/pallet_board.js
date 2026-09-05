@@ -48,20 +48,32 @@
     }catch(e){console.warn('PULSIA: no se pudieron actualizar contadores/palets',e)}
   }
 
-  function isQualityRow(select){
+  function rowZoneText(select){
     const tr=select.closest('tr');
-    if(!tr)return false;
+    if(!tr)return '';
     const cells=tr.querySelectorAll('td');
-    const zoneText=(cells[6]?cells[6].textContent:'').trim().toLocaleLowerCase('es');
-    return zoneText.includes('calidad');
+    return (cells[6]?cells[6].textContent:'').trim().toLocaleLowerCase('es');
   }
+  function isQualityRow(select){return rowZoneText(select).includes('calidad')}
+  function isPaintRow(select){return rowZoneText(select).includes('pintura')}
 
   function decorateDestinations(){
+    const headers=document.querySelectorAll('.queue-table thead th');
+    if(headers[9])headers[9].textContent='Destino recomendado';
     document.querySelectorAll('.dest-select').forEach(sel=>{
       [...sel.options].filter(o=>String(o.value).startsWith('pallet:')).forEach(o=>o.remove());
       [...sel.querySelectorAll('optgroup[label="Palet / Enviado"]')].forEach(g=>g.remove());
-      if(!isQualityRow(sel))return;
-      if(openPallets.length){
+
+      // Secadero sólo puede seleccionarse desde una intervención de Pintura.
+      [...sel.options].forEach(o=>{
+        const text=(o.textContent||'').toLocaleLowerCase('es');
+        if(!text.includes('secadero'))return;
+        if(!isPaintRow(sel)){o.remove();return}
+        if(!text.includes('directo'))o.textContent=o.textContent+' · movimiento directo';
+      });
+
+      // Palet / Enviado continúa siendo un destino logístico exclusivo de Calidad.
+      if(isQualityRow(sel)&&openPallets.length){
         const group=document.createElement('optgroup');group.label='Palet / Enviado';
         openPallets.forEach(p=>{const o=document.createElement('option');o.value='pallet:'+p.id;o.textContent=p.code+' · '+p.units+' ud.';group.appendChild(o)});
         sel.appendChild(group);
@@ -91,5 +103,6 @@
   const queue=document.getElementById('queueBody');
   new MutationObserver(function(){decorateDestinations()}).observe(queue,{childList:true,subtree:true});
   refreshAux();
+  decorateDestinations();
   setInterval(refreshAux,30000);
 })();
