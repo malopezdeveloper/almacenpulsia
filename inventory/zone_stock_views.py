@@ -73,13 +73,7 @@ def zone_stock(request):
 @login_required
 @require_POST
 def finish_unit_intervention(request, intervention_pk):
-    """Finaliza el trabajo y mueve físicamente la unidad al destino elegido.
-
-    Mientras una intervención está abierta, la ubicación física es la zona/origen
-    donde trabaja el técnico. Al finalizar, destination_zone pasa a ser la nueva
-    ubicación física. Secadero mantiene la restricción especial: sólo Pintura
-    puede introducir unidades allí.
-    """
+    """Finaliza el trabajo y mueve físicamente la unidad al destino elegido."""
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
 
@@ -140,8 +134,6 @@ def finish_unit_intervention(request, intervention_pk):
         f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; '
         f'enviada al stock de {destination.name}.'
     )
-    # Mi Pizarra finaliza mediante fetch/AJAX y espera JSON. Devolver un redirect
-    # HTML hacía que el navegador interpretase una operación correcta como error.
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({
             'ok': True,
@@ -158,7 +150,12 @@ def finish_unit_intervention(request, intervention_pk):
 @login_required
 @require_POST
 def delete_unit_intervention(request, intervention_pk):
-    """No permite borrar la intervención que actualmente sostiene el stock físico."""
+    """Borra una fila de Mi Pizarra y, si era la ubicación actual, la retira del stock de zona.
+
+    Borrar es una corrección manual: no equivale a finalizar ni a enviar a otro destino.
+    Se conserva un AuditLog con el estado que se eliminó. Sólo se bloquea si la
+    intervención ya tiene trazabilidad funcional asociada.
+    """
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
     with transaction.atomic():
@@ -166,18 +163,13 @@ def delete_unit_intervention(request, intervention_pk):
             UnitIntervention.objects.select_for_update().select_related('unit', 'unit__physical_unit', 'zone'),
             pk=intervention_pk, worker=request.user,
         )
-        if PhysicalUnitLocation.objects.filter(intervention=intervention).exists():
-            text = 'No se puede borrar esta fila porque define la ubicación física actual de la unidad en el stock de una zona.'
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'ok': False, 'error': text}, status=409)
-            messages.error(request, text)
-            return redirect('production_board')
         if intervention.alerts.exists() or intervention.component_installations.exists() or intervention.repair_confirmations.exists():
             text = 'Esta fila ya tiene trazabilidad asociada y no puede borrarse.'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'ok': False, 'error': text}, status=409)
             messages.error(request, text)
             return redirect('production_board')
+
         details = {
             'serial_number': intervention.unit.serial_number,
             'intervention_id': intervention.pk,
@@ -189,8 +181,27 @@ def delete_unit_intervention(request, intervention_pk):
             'duration_seconds': intervention.duration_seconds,
             'source': intervention.source,
             'source_snapshot': intervention.source_snapshot,
+            'removed_current_location': False,
         }
         serial = intervention.unit.serial_number
-        AuditLog.objects.create(user=request.user, action='unit_board_row_deleted', object_type='UnitIntervention', object_id=str(intervention.pk), details=details)
+
+        # La ubicación tiene PROTECT hacia la intervención. Si esta fila sostiene
+        # la ubicación física actual, primero se elimina esa ubicación y después
+        # la intervención. Así el botón Borrar vuelve a ser una corrección real.
+        current_location = (PhysicalUnitLocation.objects.select_for_update()
+                            .filter(intervention=intervention).first())
+        if current_location:
+            details['removed_current_location'] = True
+            details['physical_zone_id'] = current_location.zone_id
+            details['physical_zone'] = current_location.zone.name
+            current_location.delete()
+
+        AuditLog.objects.create(
+            user=request.user,
+            action='unit_board_row_deleted',
+            object_type='UnitIntervention',
+            object_id=str(intervention.pk),
+            details=details,
+        )
         intervention.delete()
-    return JsonResponse({'ok': True, 'serial_number': serial})
+    return JsonResponse({'ok': True, 'serial_number': serial, 'removed_current_location': details['removed_current_location']})
