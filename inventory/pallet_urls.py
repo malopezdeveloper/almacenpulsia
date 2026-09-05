@@ -2,6 +2,7 @@ from django.urls import path
 from . import pallet_views
 
 urlpatterns = [
+    path('produccion/pizarra/zona-declarada/', pallet_views.declare_worker_zone, name='declare_worker_zone'),
     path('pedidos/palets/', pallet_views.pallet_center, name='pallet_center'),
     path('pedidos/palets/abiertos/', pallet_views.open_pallets_api, name='open_pallets_api'),
     path('pedidos/palets/crear/', pallet_views.create_pallet, name='pallet_create'),
