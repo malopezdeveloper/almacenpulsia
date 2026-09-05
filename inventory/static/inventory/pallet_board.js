@@ -1,4 +1,6 @@
 (function(){
+  function addPedidosPalletTab(){const tabs=document.querySelector('.batch-tabs');if(!tabs||tabs.querySelector('[data-pallet-tab]'))return;const a=document.createElement('a');a.className='batch-tab';a.href='/pedidos/palets/';a.dataset.palletTab='1';a.textContent='▧ Palets';tabs.appendChild(a)}
+  addPedidosPalletTab();
   function onBoard(){return !!document.getElementById('queueBody')&&!!document.getElementById('unitForm')}
   if(!onBoard())return;
   const csrfEl=document.querySelector('#unitForm input[name=csrfmiddlewaretoken]');
