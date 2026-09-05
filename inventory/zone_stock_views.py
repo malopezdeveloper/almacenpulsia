@@ -73,7 +73,7 @@ def zone_stock(request):
 @login_required
 @require_POST
 def finish_unit_intervention(request, intervention_pk):
-    """Finaliza el trabajo y mueve físicamente la unidad al destino elegido."""
+    """Finaliza el trabajo. Sin destino, la unidad permanece en el stock de origen."""
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
 
@@ -83,17 +83,21 @@ def finish_unit_intervention(request, intervention_pk):
                 'unit', 'unit__physical_unit', 'zone', 'destination_zone'),
             pk=intervention_pk, worker=request.user, finished_at__isnull=True,
         )
-        destination = get_object_or_404(
-            ProductionZone, pk=request.POST.get('destination_zone'), is_active=True)
 
-        if destination.pk == intervention.zone_id:
-            return _finish_error(request, 'El destino debe ser distinto de la zona actual.')
+        destination_id = (request.POST.get('destination_zone') or '').strip()
+        destination = None
+        if destination_id:
+            destination = get_object_or_404(ProductionZone, pk=destination_id, is_active=True)
+            if destination.pk == intervention.zone_id:
+                destination = None
 
-        is_dryer = _zone_matches(destination, 'secadero')
-        is_paint = _zone_matches(intervention.zone, 'pintura')
-        if is_dryer and not is_paint:
-            return _finish_error(request, 'Sólo Pintura puede enviar una unidad a Secadero.', 403)
+        if destination is not None:
+            is_dryer = _zone_matches(destination, 'secadero')
+            is_paint = _zone_matches(intervention.zone, 'pintura')
+            if is_dryer and not is_paint:
+                return _finish_error(request, 'Sólo Pintura puede enviar una unidad a Secadero.', 403)
 
+        physical_zone = destination or intervention.zone
         now = timezone.now()
         intervention.finished_at = now
         intervention.duration_seconds = max(0, int((now - intervention.created_at).total_seconds()))
@@ -105,42 +109,50 @@ def finish_unit_intervention(request, intervention_pk):
                     .filter(physical_unit=physical).first())
         if location:
             location.unit = intervention.unit
-            location.zone = destination
+            location.zone = physical_zone
             location.intervention = intervention
             location.worker = request.user
             location.entered_at = now
             location.save(update_fields=['unit', 'zone', 'intervention', 'worker', 'entered_at', 'updated_at'])
         else:
             PhysicalUnitLocation.objects.create(
-                physical_unit=physical, unit=intervention.unit, zone=destination,
+                physical_unit=physical, unit=intervention.unit, zone=physical_zone,
                 intervention=intervention, worker=request.user, entered_at=now,
             )
 
         AuditLog.objects.create(
-            user=request.user, action='unit_moved_to_destination', object_type='OrderUnit', object_id=str(intervention.unit_id),
+            user=request.user,
+            action='unit_moved_to_destination' if destination else 'unit_finished_in_origin',
+            object_type='OrderUnit',
+            object_id=str(intervention.unit_id),
             details={
                 'serial_number': intervention.unit.serial_number,
                 'intervention_id': intervention.pk,
                 'source_zone_id': intervention.zone_id,
                 'source_zone': intervention.zone.name,
-                'destination_zone_id': destination.pk,
-                'destination_zone': destination.name,
-                'physical_zone_id': destination.pk,
-                'physical_zone': destination.name,
+                'destination_zone_id': destination.pk if destination else None,
+                'destination_zone': destination.name if destination else None,
+                'physical_zone_id': physical_zone.pk,
+                'physical_zone': physical_zone.name,
             },
         )
 
-    success_text = (
-        f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; '
-        f'enviada al stock de {destination.name}.'
-    )
+    if destination:
+        success_text = (f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; '
+                        f'enviada al stock de {destination.name}.')
+    else:
+        success_text = (f'{intervention.unit.serial_number}: trabajo finalizado; '
+                        f'permanece en el stock de {intervention.zone.name}.')
+
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({
             'ok': True,
             'serial_number': intervention.unit.serial_number,
             'intervention_id': intervention.pk,
-            'destination_zone_id': destination.pk,
-            'destination_zone': destination.name,
+            'destination_zone_id': destination.pk if destination else None,
+            'destination_zone': destination.name if destination else '',
+            'physical_zone_id': physical_zone.pk,
+            'physical_zone': physical_zone.name,
             'message': success_text,
         })
     messages.success(request, success_text)
@@ -150,12 +162,7 @@ def finish_unit_intervention(request, intervention_pk):
 @login_required
 @require_POST
 def delete_unit_intervention(request, intervention_pk):
-    """Borra una fila de Mi Pizarra y, si era la ubicación actual, la retira del stock de zona.
-
-    Borrar es una corrección manual: no equivale a finalizar ni a enviar a otro destino.
-    Se conserva un AuditLog con el estado que se eliminó. Sólo se bloquea si la
-    intervención ya tiene trazabilidad funcional asociada.
-    """
+    """Borra una fila de Mi Pizarra y, si era la ubicación actual, la retira del stock de zona."""
     if not _can_work(request.user):
         return HttpResponseForbidden('No tienes permiso para esta operación.')
     with transaction.atomic():
@@ -184,10 +191,6 @@ def delete_unit_intervention(request, intervention_pk):
             'removed_current_location': False,
         }
         serial = intervention.unit.serial_number
-
-        # La ubicación tiene PROTECT hacia la intervención. Si esta fila sostiene
-        # la ubicación física actual, primero se elimina esa ubicación y después
-        # la intervención. Así el botón Borrar vuelve a ser una corrección real.
         current_location = (PhysicalUnitLocation.objects.select_for_update()
                             .filter(intervention=intervention).first())
         if current_location:
@@ -196,12 +199,8 @@ def delete_unit_intervention(request, intervention_pk):
             details['physical_zone'] = current_location.zone.name
             current_location.delete()
 
-        AuditLog.objects.create(
-            user=request.user,
-            action='unit_board_row_deleted',
-            object_type='UnitIntervention',
-            object_id=str(intervention.pk),
-            details=details,
-        )
+        AuditLog.objects.create(user=request.user, action='unit_board_row_deleted',
+                                object_type='UnitIntervention', object_id=str(intervention.pk), details=details)
         intervention.delete()
-    return JsonResponse({'ok': True, 'serial_number': serial, 'removed_current_location': details['removed_current_location']})
+    return JsonResponse({'ok': True, 'serial_number': serial,
+                         'removed_current_location': details['removed_current_location']})
