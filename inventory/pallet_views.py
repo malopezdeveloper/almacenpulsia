@@ -162,6 +162,9 @@ def remove_unit_from_pallet(request, membership_pk):
                 'physical_unit_id': unit.physical_unit_id,
                 'order_id': unit.order_id,
                 'order': unit.order.name,
+                'work_context': 'order',
+                'selected_order_id': unit.order_id,
+                'selected_order': unit.order.name,
                 'logistic_origin': 'pallet',
                 'pallet_id': pallet.pk,
                 'pallet_code': pallet.code,
@@ -182,7 +185,7 @@ def remove_unit_from_pallet(request, membership_pk):
             object_id=str(membership_pk),
             details=data,
         )
-    messages.success(request, f'{unit.serial_number} extraída de {pallet.code} y enviada a {destination.name}.')
+    messages.success(request, f'{unit.serial_number} extraída de {pallet.code} y fichada en {destination.name}.')
     return redirect('production_board')
 
 
