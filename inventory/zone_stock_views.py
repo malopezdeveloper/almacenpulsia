@@ -136,10 +136,22 @@ def finish_unit_intervention(request, intervention_pk):
             },
         )
 
-    messages.success(
-        request,
-        f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; enviada al stock de {destination.name}.',
+    success_text = (
+        f'{intervention.unit.serial_number}: trabajo finalizado en {intervention.zone.name}; '
+        f'enviada al stock de {destination.name}.'
     )
+    # Mi Pizarra finaliza mediante fetch/AJAX y espera JSON. Devolver un redirect
+    # HTML hacía que el navegador interpretase una operación correcta como error.
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'ok': True,
+            'serial_number': intervention.unit.serial_number,
+            'intervention_id': intervention.pk,
+            'destination_zone_id': destination.pk,
+            'destination_zone': destination.name,
+            'message': success_text,
+        })
+    messages.success(request, success_text)
     return redirect('production_board')
 
 
